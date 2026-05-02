@@ -4,6 +4,61 @@ All notable changes to gridcalc are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## 0.6.0 — Phase 6: RK4 + generic time integrator interface
+
+### Added
+
+- `gridcalc::solve::ExplicitEuler` and `gridcalc::solve::RK4` empty
+  tag structs, each carrying a `static constexpr double diffusionCFLLimit`
+  (Euler `0.5`, RK4 `0.6963`).
+- `gridcalc::solve::integrate(psi, rhs, dt, n_steps, IntegratorTag{})` —
+  generic tag-dispatched time integrator. Two overloads, one per tag.
+- Classic 4-stage Runge–Kutta implementation in
+  `solve/RK4.hpp`; per-step allocation is `~6` fields. Phase 20 will
+  optimize via persistent scratch.
+- `solve/Integrator.hpp` — one-stop aggregator that pulls in both
+  `ExplicitEuler.hpp` and `RK4.hpp`.
+
+### Changed
+
+- `gridcalc::solve::diffuse` is now templated on the integrator tag:
+  `diffuse(psi, D, dt, n_steps, Integrator{})`. The default tag is
+  `ExplicitEuler{}`, so Phase 5 callers (no integrator argument) keep
+  working unchanged. The CFL check now reads
+  `Integrator::diffusionCFLLimit`, so RK4 callers get the larger
+  stability bound automatically.
+- `gridcalc::solve::explicitEuler` is now a thin wrapper that forwards
+  to `solve::integrate(..., ExplicitEuler{})`. Phase 5 callers and
+  tests are unaffected.
+- The Phase-5-specific `solve::detail::checkExplicitDiffusionCFL` is
+  superseded by the templated `solve::detail::checkDiffusionCFL<Tag>`.
+
+### Tests
+
+- RK4 matches the analytical heat-equation decay within `1e-2` relative
+  at `N=32, T=5.0` (10× tighter than Phase 5's Euler at the same
+  parameters).
+- Combined refinement (`N ∈ {16, 32, 64}` with each integrator's own
+  CFL-limited dt): both Euler and RK4 show log-log slope in `[1.8, 2.5]`
+  (combined order is spatial-dominated at CFL-limited dt).
+- Pure linear-decay ODE comparison: RK4's error is at least 10× smaller
+  than Euler's at the same dt (isolates time-error from spatial-error).
+- **Pure linear-decay ODE convergence sweep over `dt`**: RK4 log-log
+  slope in `[3.5, 5.0]`, ratio `>= 8` per halving. Satisfies the
+  roadmap's `error scales as Δt^4` acceptance.
+- RK4 succeeds in the gap between Euler's CFL (`0.5`) and RK4's
+  (`0.6963`) where Euler throws.
+- Bit-identical output between Phase 5's `solve::explicitEuler(...)`
+  wrapper and `solve::integrate(..., ExplicitEuler{})`.
+
+### Documentation
+
+- New User Guide note `docs/user-guide/notes/phase-6-rk4-integrator.md`.
+- New Developer Note `docs/developer-note/notes/phase-6-rk4-integrator.md`
+  with the four-stage Taylor-match derivation, the RK4 stability-region
+  intersection at `~-2.7853`, and four external references
+  (Hairer–Nørsett–Wanner, Butcher, Wikipedia RK methods, LeVeque).
+
 ## 0.5.0 — Phase 5: explicit Euler diffusion solver
 
 ### Added

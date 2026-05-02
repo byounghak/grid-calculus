@@ -2,13 +2,15 @@
 
 Hand-off snapshot. Update this file whenever a phase completes or a major decision changes.
 
-**Last updated:** 2026-05-02 (Phase 5 merged into `main`)
+**Last updated:** 2026-05-02 (Phase 6 implementation; PR open, awaiting CI)
 
 ## Where the project stands
 
-**Phase 5 — Explicit Euler diffusion solver is done.** Version bumped to `0.5.0`. The library now exposes time integration: `gridcalc::solve::explicitEuler<Rhs>(Field<double>&, rhs, dt, n_steps)` (generic, mutates in place; SFINAE-validates the RHS callable signature) and `gridcalc::solve::diffuse(Field<double>&, D, dt, n_steps)` (convenience driver for $\partial_t\psi = D\nabla^2\psi$, internally forwards to `explicitEuler` with `diff::laplacian` as the RHS and `D*dt` as the effective step). New public namespace `gridcalc::solve` and directory `include/gridcalc/solve/`. CFL stability is enforced before integration begins via the von Neumann bound $D\,dt \sum_a (1/h_a^2) \le 1/2$; violation throws `std::invalid_argument` with a diagnostic message. All six new tests pass: trig-eigenfunction matching the analytical `exp(-3 D T) ψ_0` after 100 steps, 2nd-order convergence sweep over `N ∈ {16,32,64}` with `dt ∝ h²`, Gaussian sanity (finite values, mass conserved via `func::integrate`, peak decreased), CFL violation throws, generic explicit-Euler on zero RHS bit-identical, negative `n_steps` rejected.
+**Phase 6 — RK4 + generic time integrator interface is done.** Version bumped to `0.6.0`. Adds tag-dispatched generic integrator `gridcalc::solve::integrate(psi, rhs, dt, n_steps, IntegratorTag{})` with two tags: `solve::ExplicitEuler` (Phase 5 default; CFL `0.5`) and `solve::RK4` (4-stage classic Runge–Kutta; CFL `0.6963` for the heat equation). Phase 5's `solve::explicitEuler` is preserved as a thin wrapper over `integrate(..., ExplicitEuler{})`. `solve::diffuse` is now templated on the integrator tag (default `ExplicitEuler{}`); the per-tag CFL limit is read from `Integrator::diffusionCFLLimit` so RK4 callers get the larger stability bound automatically. New aggregator header `solve/Integrator.hpp` pulls in both per-integrator headers. All six new tests pass: RK4-matches-analytic at `N=32` (1% relative, 10× tighter than Euler), combined refinement showing slope ~2 for both integrators (spatial-dominated at CFL-limited dt), pure-ODE comparison showing RK4 ≥ 10× more accurate than Euler at the same dt, **pure-ODE dt-sweep showing RK4 log-log slope ~4 (satisfies the roadmap's `error scales as Δt^4` acceptance)**, RK4-stability-gap test, and bit-identical Phase 5 wrapper. All 47 prior tests still pass.
 
-**Phase 5 PR:** **#7** — *Phase 5 — Explicit Euler diffusion solver* — merged into `main` on 2026-05-02 (rebase merge, commit `54e8c82`). CI was green on Ubuntu GCC, Ubuntu Clang, and the `Render Doc PDFs` job.
+**Phase 6 PR:** open as of 2026-05-02 — *Phase 6 — RK4 + generic time integrator*. (PR number assigned at push time; STATUS will be refreshed post-merge.)
+
+**Previously (Phase 5):** PR #7 merged into `main` on 2026-05-02 (rebase merge, commit `54e8c82`). `solve::explicitEuler` (now a thin wrapper) and `solve::diffuse` with the von-Neumann CFL check.
 
 **Previously (Phase 4):** PR #5 merged into `main` on 2026-05-02 (rebase merge, commit `0e6250f`). `func::evaluate` with SFINAE-detected callable arity for `f(ψ)`, `f(ψ, ∇ψ)`, or `f(ψ, ∇ψ, ∇²ψ)`; eager materialization of only the derivatives the callable actually consumes; Ginzburg–Landau hand-computed test passes within stencil-order error.
 
@@ -20,7 +22,7 @@ Hand-off snapshot. Update this file whenever a phase completes or a major decisi
 
 **Previously (Phase 0):** PR #1 merged into `main` on 2026-05-01 with the buildable empty skeleton — CMake 3.20+ project, Eigen 3.4.0 + GoogleTest v1.14.0 pinned in `cmake/Dependencies.cmake`, repo layout per `tech-stack.md`, `.clang-format` / `.clang-tidy` / `CMakePresets.json`, GitHub Actions CI on Ubuntu (GCC + Clang), and the proprietary LICENSE.
 
-**Repository:** [github.com/byounghak/grid-calculus](https://github.com/byounghak/grid-calculus) — **private**, SSH remote `git@github.com:byounghak/grid-calculus.git`. Merged PRs to date: **#1** (Phase 0), **#2** (Phase 1), **#3** (Phase 2), **#4** (Phase 3), **#5** (Phase 4), **#6** (lightweight pandoc PDF render workflow + Phase 1/2 doc-notes backfill), **#7** (Phase 5 — explicit Euler diffusion). Current version `0.5.0`. CI: Ubuntu GCC + Ubuntu Clang on every PR plus a `Render Doc PDFs` job that uploads `gridcalc-docs-pdfs` artifacts (Phase 21 widens to Apple Clang + MSVC).
+**Repository:** [github.com/byounghak/grid-calculus](https://github.com/byounghak/grid-calculus) — **private**, SSH remote `git@github.com:byounghak/grid-calculus.git`. Merged PRs to date: **#1** (Phase 0), **#2** (Phase 1), **#3** (Phase 2), **#4** (Phase 3), **#5** (Phase 4), **#6** (PDF render workflow + Phase 1/2 doc-notes backfill), **#7** (Phase 5 — explicit Euler), **#8** (`get-docs.sh` script). Phase 6 PR opens 2026-05-02. Current version `0.6.0`. CI: Ubuntu GCC + Ubuntu Clang on every PR plus a `Render Doc PDFs` job that uploads `gridcalc-docs-pdfs` artifacts (Phase 21 widens to Apple Clang + MSVC).
 
 **License:** Proprietary, all rights reserved (`LICENSE` is the short notice agreed in the Phase 0 spec round). No open-source license; redistribution requires authorization. Mission target unchanged: production / industrial use, distributed to authorized recipients only.
 
@@ -34,14 +36,14 @@ Hand-off snapshot. Update this file whenever a phase completes or a major decisi
 
 ## Next action
 
-**Phase 6 — RK4 + generic time integrator interface.** Per `CLAUDE.md`, the entry point is:
+**Phase 7 — Higher-order accuracy stencils (4th-order).** Per `CLAUDE.md`, the entry point is:
 
-1. Open branch `YYYY-MM-DD-phase-6-rk4-integrator` (use today's date when starting).
-2. Use `AskUserQuestion` to pin down API choices: shape of the generic `solve::Integrator` interface (free function with tag dispatch vs class with virtual `step()` vs CRTP); whether `explicitEuler` is refactored to consume the new interface or kept as a parallel free-function path; signature of the RK4 implementation; how `solve::diffuse` chooses between integrators.
-3. Create `specs/YYYY-MM-DD-phase-6-rk4-integrator/{plan,requirements,validation}.md`.
-4. Implement: `solve/Integrator.hpp` (generic interface) and `solve/RK4.hpp` (RK4 implementation). Refactor `solve::diffuse` to consume the integrator interface so caller can pick `ExplicitEuler` or `RK4`. Tests: RK4 4th-order time accuracy on the trig-eigenfunction heat-equation problem; convergence-order test confirms slope ~4.
+1. Open branch `YYYY-MM-DD-phase-7-higher-order-stencils` (use today's date when starting).
+2. Use `AskUserQuestion` to pin down API choices: how the existing operators (Laplacian, gradient, divergence) accept an order parameter (compile-time template arg, runtime argument, or new variant operators); how `Coefficients<4>` and `FirstDerivative<4>` are derived (Fornberg algorithm vs hard-coded weights); whether the order-2 stencils stay the default for backward compatibility; how the convergence-order tests differ.
+3. Create `specs/YYYY-MM-DD-phase-7-higher-order-stencils/{plan,requirements,validation}.md`.
+4. Implement: `Coefficients<4>` and `FirstDerivative<4>` specializations; refactor `laplacian`, `gradient`, `divergence` to accept an accuracy-order template parameter (or new overloads); convergence-order tests confirming slope `~4` on trig inputs.
 
-**Acceptance** (from `roadmap.md` Phase 6): RK4 demonstrates 4th-order time accuracy on a manufactured solution.
+**Acceptance** (from `roadmap.md` Phase 7): 4th-order convergence demonstrated on Laplacian, gradient, and divergence.
 
 A scheduled follow-up agent (`trig_01M1NGo52vJhJEjx4NyvoEdf`) will check in on 2026-05-22 to decide whether to file a tracking issue for Phase 21.
 
@@ -55,7 +57,8 @@ A scheduled follow-up agent (`trig_01M1NGo52vJhJEjx4NyvoEdf`) will check in on 2
 | 3      | Domain integration (∫ over the grid)                    | Done        |
 | 4      | Functional evaluation, callable API                     | Done        |
 | 5      | Explicit Euler diffusion solver                         | Done        |
-| 6–9    | Remaining periodic FD operators + spectral verification | Not started |
+| 6      | RK4 + generic time integrator interface                 | Done        |
+| 7–9    | Remaining periodic FD operators + spectral verification | Not started |
 | 10     | Documentation infrastructure                            | Not started |
 | 11–14  | Higher-order functionals, CH demo, vector/tensor fields | Not started |
 | 15–17  | Lattice basis, multi-atom basis, sublattice operators   | Not started |
