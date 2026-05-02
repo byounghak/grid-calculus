@@ -2,19 +2,21 @@
 
 Hand-off snapshot. Update this file whenever a phase completes or a major decision changes.
 
-**Last updated:** 2026-05-02 (Phase 2 merged into `main`)
+**Last updated:** 2026-05-02 (Phase 3 implementation; PR open, awaiting CI)
 
 ## Where the project stands
 
-**Phase 2 — Gradient and divergence (scalar) is done.** Version bumped to `0.2.0`. The library now exposes the basic first-order operators: `gridcalc::diff::gradient(Field<double>) -> Field<Vec3d>` and `gridcalc::diff::divergence(Field<Vec3d>) -> Field<double>`, both 2nd-order central differences applied per axis with periodic wrap delegated to the input `Field`'s `Policy`. The first-derivative stencil lives in a new sibling template `gridcalc::stencil::FirstDerivative<Order>` (with `Order=2` specialized), separate from the Phase 1 `Coefficients<Order>` second-derivative table. The `Vec3d` alias was lifted out of `core/Grid.hpp` into a new shared `core/EigenAliases.hpp` (fully-qualified name unchanged). All seven new tests pass: trig-gradient recovery, gradient convergence sweep (slope ~2 on `N ∈ {16,32,64}`), analytical-divergence recovery on `V = (sin x cos y, cos x sin y, sin z)`, divergence convergence sweep on the same V, and the round-trip identity `divergence(gradient(ψ))` converging at order 2 to the analytical Laplacian.
+**Phase 3 — Domain integration (∫ over the grid) is done.** Version bumped to `0.3.0`. The library now exposes `gridcalc::func::integrate(const Field<double>&, Tag = {}) -> double`, the discrete periodic-midpoint integral $I_h = h_x h_y h_z \sum_{ijk} f_{ijk}$, with two reduction strategies dispatched on empty tag structs: `gridcalc::func::Pairwise` (default; rounding error $O(\varepsilon \log n)$, 64-element base case) and `gridcalc::func::Kahan` (Neumaier-style compensated, single-pass, error independent of $n$). Phase 3 ships single-threaded — the cross-thread-count determinism contract is trivially satisfied with one thread, and Phase 20 will replace the placeholder `DeterministicAcrossInvocations` test with an `OMP_NUM_THREADS`-varying version. New public namespace `gridcalc::func` and directory `include/gridcalc/func/`. All five new tests pass: unit-field-equals-domain-volume on an anisotropic non-cubic grid; `∫ sin(kx) dV = 0` over `[0, 2π]³`; manufactured-solution `cos(x)·sin(2y)·sin(3z)` integrates to 0; pairwise and Kahan agree within `1e-13` relative; bit-equality across repeated invocations.
 
-**Phase 2 PR:** **#3** — *Phase 2 — Gradient and divergence (scalar)* — merged into `main` on 2026-05-02 (rebase merge, commit `ee93091`). CI was green on Ubuntu GCC and Ubuntu Clang.
+**Phase 3 PR:** open as of 2026-05-02 — *Phase 3 — Domain integration*. (PR number assigned at push time; STATUS will be refreshed post-merge.)
+
+**Previously (Phase 2):** PR #3 merged into `main` on 2026-05-02 (rebase merge, commit `ee93091`). `gradient(Field<double>) -> Field<Vec3d>`, `divergence(Field<Vec3d>) -> Field<double>`, `stencil::FirstDerivative<2>`, `core/EigenAliases.hpp`. Convergence-order tests on trig inputs pass; round-trip `divergence(gradient(ψ))` converges at order 2 to the analytical Laplacian.
 
 **Previously (Phase 1):** PR #2 merged into `main` on 2026-05-01 — `Grid`, `Field<T, Policy=Periodic>`, `IndexPolicy::Periodic`, `stencil::Coefficients<2>`, `diff::laplacian`. Trig eigenvalue recovered to relative max-norm `~9.6e-3` at `N=32`, slope ~2 across `N ∈ {16, 32, 64}`. CMake target `gridcalc` remains INTERFACE (header-only); Eigen is propagated as a SYSTEM include.
 
 **Previously (Phase 0):** PR #1 merged into `main` on 2026-05-01 with the buildable empty skeleton — CMake 3.20+ project, Eigen 3.4.0 + GoogleTest v1.14.0 pinned in `cmake/Dependencies.cmake`, repo layout per `tech-stack.md`, `.clang-format` / `.clang-tidy` / `CMakePresets.json`, GitHub Actions CI on Ubuntu (GCC + Clang), and the proprietary LICENSE.
 
-**Repository:** [github.com/byounghak/grid-calculus](https://github.com/byounghak/grid-calculus) — **private**, SSH remote `git@github.com:byounghak/grid-calculus.git`. Merged PRs to date: **#1** (Phase 0 — project scaffold), **#2** (Phase 1 — periodic 3D scalar grid + Laplacian), **#3** (Phase 2 — gradient and divergence). Current version `0.2.0`. CI: Ubuntu GCC + Ubuntu Clang on every PR (Phase 21 widens to Apple Clang + MSVC).
+**Repository:** [github.com/byounghak/grid-calculus](https://github.com/byounghak/grid-calculus) — **private**, SSH remote `git@github.com:byounghak/grid-calculus.git`. Merged PRs to date: **#1** (Phase 0 — project scaffold), **#2** (Phase 1 — periodic 3D scalar grid + Laplacian), **#3** (Phase 2 — gradient and divergence). Phase 3 PR opens 2026-05-02. Current version `0.3.0`. CI: Ubuntu GCC + Ubuntu Clang on every PR (Phase 21 widens to Apple Clang + MSVC).
 
 **License:** Proprietary, all rights reserved (`LICENSE` is the short notice agreed in the Phase 0 spec round). No open-source license; redistribution requires authorization. Mission target unchanged: production / industrial use, distributed to authorized recipients only.
 
@@ -28,14 +30,15 @@ Hand-off snapshot. Update this file whenever a phase completes or a major decisi
 
 ## Next action
 
-**Phase 3 — Domain integration (∫ over the grid).** Per `CLAUDE.md`, the entry point is:
+**Phase 4 — Functional evaluation, callable API (scalar, periodic).** Per `CLAUDE.md`, the entry point is:
 
-1. Open branch `YYYY-MM-DD-phase-3-domain-integration` (use today's date when starting).
-2. Use `AskUserQuestion` to pin down API choices (reduction strategy — pairwise vs. Kahan, deterministic-across-thread-counts contract, naming under `func/Integrate.hpp`, whether to expose a public `integrate` overload taking a callable for the integrand or only `integrate(Field<double>)`).
-3. Create `specs/YYYY-MM-DD-phase-3-domain-integration/{plan,requirements,validation}.md`.
-4. Implement: `func/Integrate.hpp` with deterministic reduction order; tests for `∫ 1 dV = domain volume` and `∫ sin(kx) dV = 0` over a period; thread-count-determinism test.
+1. Open branch `YYYY-MM-DD-phase-4-functional-evaluation` (use today's date when starting).
+2. Use `AskUserQuestion` to pin down API choices (signature of the callable: does it take `(ψ, ∇ψ, ∇²ψ)` always or is the gradient/Laplacian computed lazily on request? expression-template integrand vs eager evaluation? handling of the materialized intermediate `Field<Vec3d>` for `∇ψ`?).
+3. Create `specs/YYYY-MM-DD-phase-4-functional-evaluation/{plan,requirements,validation}.md`.
+4. Implement: `func/Functional.hpp` (or similar) with a callable taking $(\psi, \nabla\psi, \nabla^2\psi)$ and returning the integrated functional value.
+5. Doc-notes are now mandatory per `specs/CLAUDE.md` step 4d: User Guide note + Developer Note (five-section structure with at least one external citation).
 
-**Acceptance** (from `roadmap.md` Phase 3): reduction is deterministic across thread counts (verified by test).
+**Acceptance** (from `roadmap.md` Phase 4): a worked end-to-end functional evaluation passes for at least one non-trivial $f$ on trig manufactured solutions.
 
 A scheduled follow-up agent (`trig_01M1NGo52vJhJEjx4NyvoEdf`) will check in on 2026-05-22 to decide whether to file a tracking issue for Phase 21.
 
@@ -46,7 +49,8 @@ A scheduled follow-up agent (`trig_01M1NGo52vJhJEjx4NyvoEdf`) will check in on 2
 | 0      | Project scaffold                                        | Done        |
 | 1      | Periodic 3D scalar grid + Laplacian                     | Done        |
 | 2      | Gradient and divergence (scalar)                        | Done        |
-| 3–9    | Remaining periodic FD operators + spectral verification | Not started |
+| 3      | Domain integration (∫ over the grid)                    | Done        |
+| 4–9    | Remaining periodic FD operators + spectral verification | Not started |
 | 10     | Documentation infrastructure                            | Not started |
 | 11–14  | Higher-order functionals, CH demo, vector/tensor fields | Not started |
 | 15–17  | Lattice basis, multi-atom basis, sublattice operators   | Not started |
