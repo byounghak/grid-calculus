@@ -2,13 +2,13 @@
 
 Hand-off snapshot. Update this file whenever a phase completes or a major decision changes.
 
-**Last updated:** 2026-05-02 (Phase 4 implementation; PR open, awaiting CI)
+**Last updated:** 2026-05-02 (Phase 4 merged into `main`)
 
 ## Where the project stands
 
 **Phase 4 — Functional evaluation, callable API (scalar, periodic) is done.** Version bumped to `0.4.0`. The library now exposes `gridcalc::func::evaluate(const Field<double>& psi, F&& f, Tag = {}) -> double` — the discrete functional $F[\psi] = \int f(\psi, \nabla\psi, \nabla^2\psi)\, dV$. The callable `f` is detected at compile time as one of three arities via `if constexpr` + `std::is_invocable_r_v`: `f(ψ)`, `f(ψ, ∇ψ)`, or `f(ψ, ∇ψ, ∇²ψ)` — only the derivatives the callable actually consumes are materialized (1-arg path skips both stencils, 2-arg skips the Laplacian, 3-arg materializes both). Implementation is eager and reuses Phase 1–3 primitives directly: `diff::gradient`, `diff::laplacian`, and `func::integrate` (with the same `Pairwise` / `Kahan` tag dispatch). All six new tests pass: Ginzburg–Landau hand-computed at `N=64` (reference `(507/64)π³ ≈ 245.62`), 2nd-order convergence sweep on GL over `N ∈ {16,32,64}` (slope ~2), per-arity dispatch tests for each of the three signatures, and `Pairwise` / `Kahan` agreement on the GL setup. The User Guide note doubles as the "tutorial doc page" deliverable from the roadmap.
 
-**Phase 4 PR:** open as of 2026-05-02 — *Phase 4 — Functional evaluation*. (PR number assigned at push time; STATUS will be refreshed post-merge.)
+**Phase 4 PR:** **#5** — *Phase 4 — Functional evaluation, callable API (scalar, periodic)* — merged into `main` on 2026-05-02 (rebase merge, commit `0e6250f`). CI was green on Ubuntu GCC and Ubuntu Clang.
 
 **Previously (Phase 3):** PR #4 merged into `main` on 2026-05-02 (rebase merge, commit `b1c136d`). `func::integrate` with `Pairwise` (default) and `Kahan` tag dispatch on a periodic-midpoint quadrature rule. New public namespace `gridcalc::func` and directory `include/gridcalc/func/`. Cross-thread-count determinism is trivially met at single-threaded; Phase 20 expands the placeholder test.
 
@@ -18,7 +18,7 @@ Hand-off snapshot. Update this file whenever a phase completes or a major decisi
 
 **Previously (Phase 0):** PR #1 merged into `main` on 2026-05-01 with the buildable empty skeleton — CMake 3.20+ project, Eigen 3.4.0 + GoogleTest v1.14.0 pinned in `cmake/Dependencies.cmake`, repo layout per `tech-stack.md`, `.clang-format` / `.clang-tidy` / `CMakePresets.json`, GitHub Actions CI on Ubuntu (GCC + Clang), and the proprietary LICENSE.
 
-**Repository:** [github.com/byounghak/grid-calculus](https://github.com/byounghak/grid-calculus) — **private**, SSH remote `git@github.com:byounghak/grid-calculus.git`. Merged PRs to date: **#1** (Phase 0 — project scaffold), **#2** (Phase 1 — periodic 3D scalar grid + Laplacian), **#3** (Phase 2 — gradient and divergence), **#4** (Phase 3 — domain integration). Phase 4 PR opens 2026-05-02. Current version `0.4.0`. CI: Ubuntu GCC + Ubuntu Clang on every PR (Phase 21 widens to Apple Clang + MSVC).
+**Repository:** [github.com/byounghak/grid-calculus](https://github.com/byounghak/grid-calculus) — **private**, SSH remote `git@github.com:byounghak/grid-calculus.git`. Merged PRs to date: **#1** (Phase 0 — project scaffold), **#2** (Phase 1 — periodic 3D scalar grid + Laplacian), **#3** (Phase 2 — gradient and divergence), **#4** (Phase 3 — domain integration), **#5** (Phase 4 — functional evaluation). Current version `0.4.0`. CI: Ubuntu GCC + Ubuntu Clang on every PR (Phase 21 widens to Apple Clang + MSVC).
 
 **License:** Proprietary, all rights reserved (`LICENSE` is the short notice agreed in the Phase 0 spec round). No open-source license; redistribution requires authorization. Mission target unchanged: production / industrial use, distributed to authorized recipients only.
 
