@@ -2,13 +2,13 @@
 
 Hand-off snapshot. Update this file whenever a phase completes or a major decision changes.
 
-**Last updated:** 2026-05-02 (Phase 5 implementation; PR open, awaiting CI)
+**Last updated:** 2026-05-02 (Phase 5 merged into `main`)
 
 ## Where the project stands
 
 **Phase 5 — Explicit Euler diffusion solver is done.** Version bumped to `0.5.0`. The library now exposes time integration: `gridcalc::solve::explicitEuler<Rhs>(Field<double>&, rhs, dt, n_steps)` (generic, mutates in place; SFINAE-validates the RHS callable signature) and `gridcalc::solve::diffuse(Field<double>&, D, dt, n_steps)` (convenience driver for $\partial_t\psi = D\nabla^2\psi$, internally forwards to `explicitEuler` with `diff::laplacian` as the RHS and `D*dt` as the effective step). New public namespace `gridcalc::solve` and directory `include/gridcalc/solve/`. CFL stability is enforced before integration begins via the von Neumann bound $D\,dt \sum_a (1/h_a^2) \le 1/2$; violation throws `std::invalid_argument` with a diagnostic message. All six new tests pass: trig-eigenfunction matching the analytical `exp(-3 D T) ψ_0` after 100 steps, 2nd-order convergence sweep over `N ∈ {16,32,64}` with `dt ∝ h²`, Gaussian sanity (finite values, mass conserved via `func::integrate`, peak decreased), CFL violation throws, generic explicit-Euler on zero RHS bit-identical, negative `n_steps` rejected.
 
-**Phase 5 PR:** open as of 2026-05-02 — *Phase 5 — Explicit Euler diffusion solver*. (PR number assigned at push time; STATUS will be refreshed post-merge.)
+**Phase 5 PR:** **#7** — *Phase 5 — Explicit Euler diffusion solver* — merged into `main` on 2026-05-02 (rebase merge, commit `54e8c82`). CI was green on Ubuntu GCC, Ubuntu Clang, and the `Render Doc PDFs` job.
 
 **Previously (Phase 4):** PR #5 merged into `main` on 2026-05-02 (rebase merge, commit `0e6250f`). `func::evaluate` with SFINAE-detected callable arity for `f(ψ)`, `f(ψ, ∇ψ)`, or `f(ψ, ∇ψ, ∇²ψ)`; eager materialization of only the derivatives the callable actually consumes; Ginzburg–Landau hand-computed test passes within stencil-order error.
 
@@ -20,7 +20,7 @@ Hand-off snapshot. Update this file whenever a phase completes or a major decisi
 
 **Previously (Phase 0):** PR #1 merged into `main` on 2026-05-01 with the buildable empty skeleton — CMake 3.20+ project, Eigen 3.4.0 + GoogleTest v1.14.0 pinned in `cmake/Dependencies.cmake`, repo layout per `tech-stack.md`, `.clang-format` / `.clang-tidy` / `CMakePresets.json`, GitHub Actions CI on Ubuntu (GCC + Clang), and the proprietary LICENSE.
 
-**Repository:** [github.com/byounghak/grid-calculus](https://github.com/byounghak/grid-calculus) — **private**, SSH remote `git@github.com:byounghak/grid-calculus.git`. Merged PRs to date: **#1** (Phase 0), **#2** (Phase 1), **#3** (Phase 2), **#4** (Phase 3), **#5** (Phase 4), **#6** (lightweight pandoc PDF render workflow + Phase 1/2 doc-notes backfill). Phase 5 PR opens 2026-05-02. Current version `0.5.0`. CI: Ubuntu GCC + Ubuntu Clang on every PR plus a `Render Doc PDFs` job that uploads `gridcalc-docs-pdfs` artifacts (Phase 21 widens to Apple Clang + MSVC).
+**Repository:** [github.com/byounghak/grid-calculus](https://github.com/byounghak/grid-calculus) — **private**, SSH remote `git@github.com:byounghak/grid-calculus.git`. Merged PRs to date: **#1** (Phase 0), **#2** (Phase 1), **#3** (Phase 2), **#4** (Phase 3), **#5** (Phase 4), **#6** (lightweight pandoc PDF render workflow + Phase 1/2 doc-notes backfill), **#7** (Phase 5 — explicit Euler diffusion). Current version `0.5.0`. CI: Ubuntu GCC + Ubuntu Clang on every PR plus a `Render Doc PDFs` job that uploads `gridcalc-docs-pdfs` artifacts (Phase 21 widens to Apple Clang + MSVC).
 
 **License:** Proprietary, all rights reserved (`LICENSE` is the short notice agreed in the Phase 0 spec round). No open-source license; redistribution requires authorization. Mission target unchanged: production / industrial use, distributed to authorized recipients only.
 
