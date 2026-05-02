@@ -1,0 +1,24 @@
+# gridcalc clang-format profile.
+#
+# Base: Google. Project-specific overrides:
+#   - ColumnLimit 100 (Google's 80 is tight for templated tensor code).
+#   - PointerAlignment Left (`int* p` matches the project code style; Google's
+#     default is also Left, pinned here so a future style swap is explicit).
+#   - DerivePointerAlignment false (do not auto-detect from existing files).
+---
+BasedOnStyle: Google
+ColumnLimit: 100
+IndentWidth: 2
+TabWidth: 2
+UseTab: Never
+PointerAlignment: Left
+DerivePointerAlignment: false
+IncludeBlocks: Regroup
+SortIncludes: CaseSensitive
+AccessModifierOffset: -1
+SpaceBeforeCpp11BracedList: false
+AllowShortFunctionsOnASingleLine: Empty
+AlwaysBreakTemplateDeclarations: Yes
+NamespaceIndentation: None
+FixNamespaceComments: true
+ShortNamespaceLines: 1

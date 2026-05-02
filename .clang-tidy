@@ -1,0 +1,27 @@
+# gridcalc clang-tidy profile.
+#
+# Per specs/tech-stack.md: a curated `.clang-tidy` covering modernize,
+# readability, performance, bugprone. Findings are warnings during pre-1.0;
+# they become errors at v1.0. CI enforcement is wired in a later phase
+# (Phase 0 ships the config file only so devs can run it locally).
+#
+# Disabled checks and rationale:
+#   - modernize-use-trailing-return-type: stylistic preference; the codebase
+#     uses leading return types except where templated SFINAE forces trailing.
+#   - readability-identifier-length: too noisy for math-y code where short
+#     names like `i`, `k`, `dx` are intentional.
+#   - bugprone-easily-swappable-parameters: too noisy for stencil-coefficient
+#     APIs where multiple `double` parameters are inherent.
+
+Checks: >
+    modernize-*,
+    readability-*,
+    performance-*,
+    bugprone-*,
+    -modernize-use-trailing-return-type,
+    -readability-identifier-length,
+    -bugprone-easily-swappable-parameters
+
+WarningsAsErrors: ''
+HeaderFilterRegex: '^.*/include/gridcalc/.*\.hpp$'
+FormatStyle: file
