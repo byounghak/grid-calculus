@@ -13,11 +13,20 @@
 #
 # Requirements:
 #   - pandoc                                            (markdown -> LaTeX -> PDF)
-#   - pdflatex (texlive-latex-recommended on Ubuntu)    (PDF engine)
+#   - xelatex (texlive-xetex on Ubuntu)                 (PDF engine; Unicode-native)
+#
+# Why xelatex rather than pdflatex: the doc-notes contain Greek letters and
+# other Unicode glyphs both inside and outside math mode (e.g.,
+# `O(ε log n)` in code spans). pdflatex requires explicit inputenc setup
+# for non-ASCII; xelatex handles Unicode natively. Phase 10's full LaTeX
+# skeleton stays on pdflatex (per specs/tech-stack.md), since it
+# hand-authors all .tex sources and can quote Greek letters via LaTeX
+# commands; this lightweight render is friendlier to whatever the author
+# writes in markdown.
 #
 # CI installs both. Locally on macOS:
 #   brew install pandoc
-#   brew install --cask mactex-no-gui   # if pdflatex is not already on PATH
+#   brew install --cask mactex-no-gui   # if xelatex is not already on PATH
 #
 # Output PDFs are gitignored (.gitignore already excludes *.pdf and build/).
 
@@ -31,8 +40,8 @@ if ! command -v pandoc >/dev/null 2>&1; then
   echo "error: pandoc not found on PATH. See scripts/render-docs.sh header for install hints." >&2
   exit 1
 fi
-if ! command -v pdflatex >/dev/null 2>&1; then
-  echo "error: pdflatex not found on PATH. See scripts/render-docs.sh header for install hints." >&2
+if ! command -v xelatex >/dev/null 2>&1; then
+  echo "error: xelatex not found on PATH. See scripts/render-docs.sh header for install hints." >&2
   exit 1
 fi
 
@@ -70,7 +79,7 @@ render_book() {
     -V colorlinks=true \
     -V linkcolor=blue \
     -V urlcolor=blue \
-    --pdf-engine=pdflatex \
+    --pdf-engine=xelatex \
     -o "$output" \
     "${notes[@]}"
 }
