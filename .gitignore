@@ -1,0 +1,20 @@
+# Claude Code local config
+.claude/
+
+# CMake out-of-source build trees (added in Phase 0+)
+build/
+build-*/
+cmake-build-*/
+
+# Documentation build outputs (per tech-stack.md)
+*.pdf
+docs/doxygen/
+docs/_build/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+
+# macOS
+.DS_Store
