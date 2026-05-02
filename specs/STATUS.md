@@ -2,17 +2,19 @@
 
 Hand-off snapshot. Update this file whenever a phase completes or a major decision changes.
 
-**Last updated:** 2026-05-02 (Phase 2 implementation; PR open, awaiting CI)
+**Last updated:** 2026-05-02 (Phase 2 merged into `main`)
 
 ## Where the project stands
 
 **Phase 2 — Gradient and divergence (scalar) is done.** Version bumped to `0.2.0`. The library now exposes the basic first-order operators: `gridcalc::diff::gradient(Field<double>) -> Field<Vec3d>` and `gridcalc::diff::divergence(Field<Vec3d>) -> Field<double>`, both 2nd-order central differences applied per axis with periodic wrap delegated to the input `Field`'s `Policy`. The first-derivative stencil lives in a new sibling template `gridcalc::stencil::FirstDerivative<Order>` (with `Order=2` specialized), separate from the Phase 1 `Coefficients<Order>` second-derivative table. The `Vec3d` alias was lifted out of `core/Grid.hpp` into a new shared `core/EigenAliases.hpp` (fully-qualified name unchanged). All seven new tests pass: trig-gradient recovery, gradient convergence sweep (slope ~2 on `N ∈ {16,32,64}`), analytical-divergence recovery on `V = (sin x cos y, cos x sin y, sin z)`, divergence convergence sweep on the same V, and the round-trip identity `divergence(gradient(ψ))` converging at order 2 to the analytical Laplacian.
 
+**Phase 2 PR:** **#3** — *Phase 2 — Gradient and divergence (scalar)* — merged into `main` on 2026-05-02 (rebase merge, commit `ee93091`). CI was green on Ubuntu GCC and Ubuntu Clang.
+
 **Previously (Phase 1):** PR #2 merged into `main` on 2026-05-01 — `Grid`, `Field<T, Policy=Periodic>`, `IndexPolicy::Periodic`, `stencil::Coefficients<2>`, `diff::laplacian`. Trig eigenvalue recovered to relative max-norm `~9.6e-3` at `N=32`, slope ~2 across `N ∈ {16, 32, 64}`. CMake target `gridcalc` remains INTERFACE (header-only); Eigen is propagated as a SYSTEM include.
 
 **Previously (Phase 0):** PR #1 merged into `main` on 2026-05-01 with the buildable empty skeleton — CMake 3.20+ project, Eigen 3.4.0 + GoogleTest v1.14.0 pinned in `cmake/Dependencies.cmake`, repo layout per `tech-stack.md`, `.clang-format` / `.clang-tidy` / `CMakePresets.json`, GitHub Actions CI on Ubuntu (GCC + Clang), and the proprietary LICENSE.
 
-**Repository:** [github.com/byounghak/grid-calculus](https://github.com/byounghak/grid-calculus) — **private**, SSH remote `git@github.com:byounghak/grid-calculus.git`. Merged PRs to date: **#1** (Phase 0 — project scaffold), **#2** (Phase 1 — periodic 3D scalar grid + Laplacian). PR for Phase 2 is open as of `2026-05-02`. Current version `0.2.0`. CI: Ubuntu GCC + Ubuntu Clang on every PR (Phase 21 widens to Apple Clang + MSVC).
+**Repository:** [github.com/byounghak/grid-calculus](https://github.com/byounghak/grid-calculus) — **private**, SSH remote `git@github.com:byounghak/grid-calculus.git`. Merged PRs to date: **#1** (Phase 0 — project scaffold), **#2** (Phase 1 — periodic 3D scalar grid + Laplacian), **#3** (Phase 2 — gradient and divergence). Current version `0.2.0`. CI: Ubuntu GCC + Ubuntu Clang on every PR (Phase 21 widens to Apple Clang + MSVC).
 
 **License:** Proprietary, all rights reserved (`LICENSE` is the short notice agreed in the Phase 0 spec round). No open-source license; redistribution requires authorization. Mission target unchanged: production / industrial use, distributed to authorized recipients only.
 
