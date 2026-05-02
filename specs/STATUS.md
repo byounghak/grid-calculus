@@ -2,15 +2,17 @@
 
 Hand-off snapshot. Update this file whenever a phase completes or a major decision changes.
 
-**Last updated:** 2026-05-02
+**Last updated:** 2026-05-02 (Phase 2 implementation; PR open, awaiting CI)
 
 ## Where the project stands
 
-**Phase 1 — Periodic 3D scalar grid + Laplacian is done.** Version bumped to `0.1.0`. The library now has real numerics: `gridcalc::core::Grid` (Cartesian-orthogonal, per-axis cell sizes), `gridcalc::core::Field<T, Policy=Periodic>` (i-fastest storage, three constructors including callable-init), `gridcalc::core::IndexPolicy::Periodic`, `gridcalc::stencil::Coefficients<2>` (with the `Order=4` extension point hooked but unspecialized), and `gridcalc::diff::laplacian` returning a fresh `Field<double>`. Acceptance tests pass: trig eigenvalue recovered to relative max-norm `~9.6e-3` at `N=32`, log-log convergence slope ~2 across `N ∈ {16, 32, 64}`. CMake target `gridcalc` is still INTERFACE (header-only); Eigen is propagated as a SYSTEM include.
+**Phase 2 — Gradient and divergence (scalar) is done.** Version bumped to `0.2.0`. The library now exposes the basic first-order operators: `gridcalc::diff::gradient(Field<double>) -> Field<Vec3d>` and `gridcalc::diff::divergence(Field<Vec3d>) -> Field<double>`, both 2nd-order central differences applied per axis with periodic wrap delegated to the input `Field`'s `Policy`. The first-derivative stencil lives in a new sibling template `gridcalc::stencil::FirstDerivative<Order>` (with `Order=2` specialized), separate from the Phase 1 `Coefficients<Order>` second-derivative table. The `Vec3d` alias was lifted out of `core/Grid.hpp` into a new shared `core/EigenAliases.hpp` (fully-qualified name unchanged). All seven new tests pass: trig-gradient recovery, gradient convergence sweep (slope ~2 on `N ∈ {16,32,64}`), analytical-divergence recovery on `V = (sin x cos y, cos x sin y, sin z)`, divergence convergence sweep on the same V, and the round-trip identity `divergence(gradient(ψ))` converging at order 2 to the analytical Laplacian.
+
+**Previously (Phase 1):** PR #2 merged into `main` on 2026-05-01 — `Grid`, `Field<T, Policy=Periodic>`, `IndexPolicy::Periodic`, `stencil::Coefficients<2>`, `diff::laplacian`. Trig eigenvalue recovered to relative max-norm `~9.6e-3` at `N=32`, slope ~2 across `N ∈ {16, 32, 64}`. CMake target `gridcalc` remains INTERFACE (header-only); Eigen is propagated as a SYSTEM include.
 
 **Previously (Phase 0):** PR #1 merged into `main` on 2026-05-01 with the buildable empty skeleton — CMake 3.20+ project, Eigen 3.4.0 + GoogleTest v1.14.0 pinned in `cmake/Dependencies.cmake`, repo layout per `tech-stack.md`, `.clang-format` / `.clang-tidy` / `CMakePresets.json`, GitHub Actions CI on Ubuntu (GCC + Clang), and the proprietary LICENSE.
 
-**Repository:** [github.com/byounghak/grid-calculus](https://github.com/byounghak/grid-calculus) — **private**, SSH remote `git@github.com:byounghak/grid-calculus.git`. Merged PRs to date: **#1** (Phase 0 — project scaffold), **#2** (Phase 1 — periodic 3D scalar grid + Laplacian). Current version `0.1.0`. CI: Ubuntu GCC + Ubuntu Clang on every PR (Phase 21 widens to Apple Clang + MSVC).
+**Repository:** [github.com/byounghak/grid-calculus](https://github.com/byounghak/grid-calculus) — **private**, SSH remote `git@github.com:byounghak/grid-calculus.git`. Merged PRs to date: **#1** (Phase 0 — project scaffold), **#2** (Phase 1 — periodic 3D scalar grid + Laplacian). PR for Phase 2 is open as of `2026-05-02`. Current version `0.2.0`. CI: Ubuntu GCC + Ubuntu Clang on every PR (Phase 21 widens to Apple Clang + MSVC).
 
 **License:** Proprietary, all rights reserved (`LICENSE` is the short notice agreed in the Phase 0 spec round). No open-source license; redistribution requires authorization. Mission target unchanged: production / industrial use, distributed to authorized recipients only.
 
@@ -24,14 +26,14 @@ Hand-off snapshot. Update this file whenever a phase completes or a major decisi
 
 ## Next action
 
-**Phase 2 — Gradient and divergence (scalar).** Per `CLAUDE.md`, the entry point is:
+**Phase 3 — Domain integration (∫ over the grid).** Per `CLAUDE.md`, the entry point is:
 
-1. Open branch `YYYY-MM-DD-phase-2-gradient-divergence` (use today's date when starting).
-2. Use `AskUserQuestion` to pin down API choices (`gradient` return type — `Field<Vec3d>`? Three `Field<double>` components? — naming for the divergence input type, whether to lift `Vec3d` out of `core/Grid.hpp` into a shared `core/EigenAliases.hpp` now that Phase 2 needs it).
-3. Create `specs/YYYY-MM-DD-phase-2-gradient-divergence/{plan,requirements,validation}.md`.
-4. Implement: `diff/Gradient.hpp`, `diff/Divergence.hpp`, plus the round-trip identity test `divergence(gradient(ψ)) ≈ laplacian(ψ)` and convergence-order tests for both operators on trig inputs.
+1. Open branch `YYYY-MM-DD-phase-3-domain-integration` (use today's date when starting).
+2. Use `AskUserQuestion` to pin down API choices (reduction strategy — pairwise vs. Kahan, deterministic-across-thread-counts contract, naming under `func/Integrate.hpp`, whether to expose a public `integrate` overload taking a callable for the integrand or only `integrate(Field<double>)`).
+3. Create `specs/YYYY-MM-DD-phase-3-domain-integration/{plan,requirements,validation}.md`.
+4. Implement: `func/Integrate.hpp` with deterministic reduction order; tests for `∫ 1 dV = domain volume` and `∫ sin(kx) dV = 0` over a period; thread-count-determinism test.
 
-**Acceptance** (from `roadmap.md` Phase 2): convergence-order tests pass for both `gradient` and `divergence` on trig inputs.
+**Acceptance** (from `roadmap.md` Phase 3): reduction is deterministic across thread counts (verified by test).
 
 A scheduled follow-up agent (`trig_01M1NGo52vJhJEjx4NyvoEdf`) will check in on 2026-05-22 to decide whether to file a tracking issue for Phase 21.
 
@@ -41,7 +43,8 @@ A scheduled follow-up agent (`trig_01M1NGo52vJhJEjx4NyvoEdf`) will check in on 2
 | ------ | ------------------------------------------------------- | ----------- |
 | 0      | Project scaffold                                        | Done        |
 | 1      | Periodic 3D scalar grid + Laplacian                     | Done        |
-| 2–9    | Remaining periodic FD operators + spectral verification | Not started |
+| 2      | Gradient and divergence (scalar)                        | Done        |
+| 3–9    | Remaining periodic FD operators + spectral verification | Not started |
 | 10     | Documentation infrastructure                            | Not started |
 | 11–14  | Higher-order functionals, CH demo, vector/tensor fields | Not started |
 | 15–17  | Lattice basis, multi-atom basis, sublattice operators   | Not started |
@@ -63,6 +66,9 @@ A scheduled follow-up agent (`trig_01M1NGo52vJhJEjx4NyvoEdf`) will check in on 2
 - **`Field<T, Policy = IndexPolicy::Periodic>` is templated on policy from Phase 1.** Only `Periodic` exists today; `Dirichlet` and `Neumann` arrive at Phase 18. The policy template parameter was the *one* piece of forward-looking design admitted at Phase 1 specifically so that Phase 18 lands as an additive change rather than a public-API break. Everything else in Phase 1 stays YAGNI.
 - **`Field<T>` storage layout is i-fastest** (`linear_index = i + Nx * (j + Ny * k)`) and is part of the public contract from Phase 1 forward. Matches FFT libraries (PocketFFT, FFTW) and Eigen's column-major default. Phase 9 spectral verification and Phase 20 benchmarks both depend on this; a layout flip later would invalidate Phase-20 baselines.
 - **`stencil::Coefficients<Order>` is a template from Phase 1**, with `Order = 2` specialized and `Order = 4` deferred to Phase 7. The primary template is intentionally undefined so unsupported orders trip at compile time at the call site rather than silently zeroing the stencil. Phase 7 adds a specialization with no call-site refactor.
+- **First-derivative coefficients live in a sibling template `stencil::FirstDerivative<Order>` (Phase 2), not in `Coefficients<Order>`.** Reusing the `Coefficients` name for first-derivative weights would silently change the semantics of Phase 1's existing call sites (Laplacian uses second-derivative coefficients). Two narrowly-named tables alongside each other was the clean call. A unifying redesign — for example a 2-parameter `Coefficients<Derivative, Order>` — is deferred to Phase 7, when both tables gain `Order = 4` specializations and the trade-offs are easier to evaluate.
+- **`core/EigenAliases.hpp` is the home for project-local Eigen typedefs.** Created in Phase 2 when `gradient` and `divergence` joined the Phase 1 `Grid` as call sites for `Vec3d`. Phase 1's `Vec3d` was relocated here without changing its fully-qualified name (`gridcalc::core::Vec3d`). Future tensor/matrix aliases (`Mat3d` etc., as needed by Phase 13/14) belong here as well.
+- **`divergence(gradient(ψ))` is *not* identically equal to `laplacian(ψ)` at finite `h`.** The composed operator is effectively a stride-2 second-derivative stencil (`(f(i+2) - 2 f(i) + f(i-2)) / (4 h²)`) whereas `laplacian` uses the 3-point stencil `(f(i-1) - 2 f(i) + f(i+1)) / h²`. Both converge to `∇²` at order 2 but with different leading constants; Phase 2's round-trip test therefore compares to the analytical Laplacian, not to `laplacian()`. This is decided behavior, not a bug.
 - **Eigen propagated as a `SYSTEM` include.** `gridcalc`'s `INTERFACE_INCLUDE_DIRECTORIES` for Eigen are added with the `SYSTEM` keyword in the root `CMakeLists.txt`, so `-Wconversion` (and the rest of our strict warning set) stays active on our code but does not fire on `<Eigen/...>`. Without this, `WARNINGS_AS_ERRORS=ON` in CI breaks on Eigen's NEON typecasting headers.
 - **Code style.** Leading-underscore member vars (`_lattice`, never `_Capital` or `__double`); camelCase verb-prefixed methods (`getX`, `isY`, `findZ`, `buildW`); snake_case struct fields; PascalCase types; STL-protocol carve-out (`begin`/`end`/`size`/`empty`/`data`/`swap` keep canonical names as 1-line shims that delegate to the verb-prefixed accessor).
 - **Compiler tier.** GCC, Clang, Apple Clang, MSVC are all blocking-CI tier-1. The "Windows best-effort" line in `tech-stack.md` is a support-priority statement, not a CI demotion.
