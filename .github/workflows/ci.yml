@@ -59,7 +59,8 @@ jobs:
             pandoc \
             texlive-latex-recommended \
             texlive-latex-extra \
-            texlive-fonts-recommended
+            texlive-fonts-recommended \
+            lmodern
 
       - name: Render User Guide and Developer Note
         run: ./scripts/render-docs.sh
