@@ -6,7 +6,9 @@ Hand-off snapshot. Update this file whenever a phase completes or a major decisi
 
 ## Where the project stands
 
-**Phase 0 — Project scaffold is done.** PR #1 merged into `main` on 2026-05-01 (Ubuntu GCC + Ubuntu Clang both green; locally spot-checked on Apple Clang via Homebrew). The repository now has a buildable skeleton: CMake 3.20+ project, Eigen 3.4.0 + GoogleTest v1.14.0 pinned in `cmake/Dependencies.cmake`, full `include/gridcalc/{core,tensor,stencil,diff,spectral,func,solve}/` placeholder tree, `gridcalc::version()` shim returning `"0.0.1"`, `.clang-format` / `.clang-tidy` / `CMakePresets.json`, GitHub Actions CI on Ubuntu, and the proprietary LICENSE.
+**Phase 1 — Periodic 3D scalar grid + Laplacian is done.** Version bumped to `0.1.0`. The library now has real numerics: `gridcalc::core::Grid` (Cartesian-orthogonal, per-axis cell sizes), `gridcalc::core::Field<T, Policy=Periodic>` (i-fastest storage, three constructors including callable-init), `gridcalc::core::IndexPolicy::Periodic`, `gridcalc::stencil::Coefficients<2>` (with the `Order=4` extension point hooked but unspecialized), and `gridcalc::diff::laplacian` returning a fresh `Field<double>`. Acceptance tests pass: trig eigenvalue recovered to relative max-norm `~9.6e-3` at `N=32`, log-log convergence slope ~2 across `N ∈ {16, 32, 64}`. CMake target `gridcalc` is still INTERFACE (header-only); Eigen is propagated as a SYSTEM include.
+
+**Previously (Phase 0):** PR #1 merged into `main` on 2026-05-01 with the buildable empty skeleton — CMake 3.20+ project, Eigen 3.4.0 + GoogleTest v1.14.0 pinned in `cmake/Dependencies.cmake`, repo layout per `tech-stack.md`, `.clang-format` / `.clang-tidy` / `CMakePresets.json`, GitHub Actions CI on Ubuntu (GCC + Clang), and the proprietary LICENSE.
 
 **Repository:** [github.com/byounghak/grid-calculus](https://github.com/byounghak/grid-calculus) — **private**. Local `main` tracks `origin/main` over SSH (`git@github.com:byounghak/grid-calculus.git`). Two commits pushed:
 
@@ -25,14 +27,14 @@ Hand-off snapshot. Update this file whenever a phase completes or a major decisi
 
 ## Next action
 
-**Phase 1 — Periodic 3D scalar grid + Laplacian.** Per `CLAUDE.md`, the entry point is:
+**Phase 2 — Gradient and divergence (scalar).** Per `CLAUDE.md`, the entry point is:
 
-1. Open branch `YYYY-MM-DD-phase-1-laplacian` (use today's date when starting).
-2. Use `AskUserQuestion` to pin down API choices (signatures for `Grid` / `Field` / `IndexPolicy::Periodic`, default accuracy order, naming, test-data choice for the convergence sweep).
-3. Create `specs/YYYY-MM-DD-phase-1-laplacian/{plan,requirements,validation}.md`.
-4. Implement: `core/Grid.hpp`, `core/Field.hpp`, `core/IndexPolicy.hpp`, `stencil/CentralDifference.hpp`, `diff/Laplacian.hpp`, plus the convergence test on $\sin(k_x x)\sin(k_y y)\sin(k_z z)$.
+1. Open branch `YYYY-MM-DD-phase-2-gradient-divergence` (use today's date when starting).
+2. Use `AskUserQuestion` to pin down API choices (`gradient` return type — `Field<Vec3d>`? Three `Field<double>` components? — naming for the divergence input type, whether to lift `Vec3d` out of `core/Grid.hpp` into a shared `core/EigenAliases.hpp` now that Phase 2 needs it).
+3. Create `specs/YYYY-MM-DD-phase-2-gradient-divergence/{plan,requirements,validation}.md`.
+4. Implement: `diff/Gradient.hpp`, `diff/Divergence.hpp`, plus the round-trip identity test `divergence(gradient(ψ)) ≈ laplacian(ψ)` and convergence-order tests for both operators on trig inputs.
 
-**Acceptance** (from `roadmap.md` Phase 1): Laplacian of $\sin(\mathbf{k}\cdot\mathbf{x})$ recovers $-|\mathbf{k}|^2$ times the input; halving $h$ reduces error by 4× (log-log slope ≈ 2).
+**Acceptance** (from `roadmap.md` Phase 2): convergence-order tests pass for both `gradient` and `divergence` on trig inputs.
 
 A scheduled follow-up agent (`trig_01M1NGo52vJhJEjx4NyvoEdf`) will check in on 2026-05-22 to decide whether to file a tracking issue for Phase 21.
 
@@ -41,7 +43,8 @@ A scheduled follow-up agent (`trig_01M1NGo52vJhJEjx4NyvoEdf`) will check in on 2
 | Phase  | Title                                                   | Status      |
 | ------ | ------------------------------------------------------- | ----------- |
 | 0      | Project scaffold                                        | Done        |
-| 1–9    | Core periodic FD operators + spectral verification      | Not started |
+| 1      | Periodic 3D scalar grid + Laplacian                     | Done        |
+| 2–9    | Remaining periodic FD operators + spectral verification | Not started |
 | 10     | Documentation infrastructure                            | Not started |
 | 11–14  | Higher-order functionals, CH demo, vector/tensor fields | Not started |
 | 15–17  | Lattice basis, multi-atom basis, sublattice operators   | Not started |
