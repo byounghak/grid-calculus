@@ -57,6 +57,8 @@ Format:
 
 `<type>` follows conventional-commits-style prefixes appropriate to the change (`feat`, `test`, `docs`, `build`, `refactor`, `perf`, `chore`).
 
+**Commit-message rules.** Do **not** include a `Co-Authored-By:` trailer in any commit message in this repository, regardless of who or what tool generated the change. The default Claude Code commit template adds one; remove it before committing.
+
 ### 4b. `requirements.md` — scope, decisions, context (lightweight)
 
 Do not write a full design doc. Capture only what is non-obvious from the roadmap or the global specs. Structure:
