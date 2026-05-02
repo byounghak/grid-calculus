@@ -5,18 +5,13 @@
 
 #pragma once
 
-#include <Eigen/Core>
 #include <cstddef>
 #include <stdexcept>
 #include <string>
 
-namespace gridcalc::core {
+#include <gridcalc/core/EigenAliases.hpp>
 
-/// \brief Project-local alias for the 3-component Cartesian vector type.
-///
-/// Promoted to a shared header at Phase 2 when more operators need it.
-/// \since 0.1.0
-using Vec3d = Eigen::Vector3d;
+namespace gridcalc::core {
 
 /// \brief A Cartesian-orthogonal sampling grid: integer extents
 ///        `(Nx, Ny, Nz)` and a per-axis cell size `(hx, hy, hz)`.
