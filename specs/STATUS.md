@@ -2,7 +2,7 @@
 
 Hand-off snapshot. Update this file whenever a phase completes or a major decision changes.
 
-**Last updated:** 2026-05-01
+**Last updated:** 2026-05-02
 
 ## Where the project stands
 
