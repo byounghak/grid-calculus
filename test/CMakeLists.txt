@@ -9,6 +9,7 @@ add_executable(gridcalc_tests
     gradient_test.cpp
     divergence_test.cpp
     integrate_test.cpp
+    functional_test.cpp
 )
 
 target_link_libraries(gridcalc_tests PRIVATE
