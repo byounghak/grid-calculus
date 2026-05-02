@@ -2,13 +2,15 @@
 
 Hand-off snapshot. Update this file whenever a phase completes or a major decision changes.
 
-**Last updated:** 2026-05-02 (Phase 4 merged into `main`)
+**Last updated:** 2026-05-02 (Phase 5 implementation; PR open, awaiting CI)
 
 ## Where the project stands
 
-**Phase 4 — Functional evaluation, callable API (scalar, periodic) is done.** Version bumped to `0.4.0`. The library now exposes `gridcalc::func::evaluate(const Field<double>& psi, F&& f, Tag = {}) -> double` — the discrete functional $F[\psi] = \int f(\psi, \nabla\psi, \nabla^2\psi)\, dV$. The callable `f` is detected at compile time as one of three arities via `if constexpr` + `std::is_invocable_r_v`: `f(ψ)`, `f(ψ, ∇ψ)`, or `f(ψ, ∇ψ, ∇²ψ)` — only the derivatives the callable actually consumes are materialized (1-arg path skips both stencils, 2-arg skips the Laplacian, 3-arg materializes both). Implementation is eager and reuses Phase 1–3 primitives directly: `diff::gradient`, `diff::laplacian`, and `func::integrate` (with the same `Pairwise` / `Kahan` tag dispatch). All six new tests pass: Ginzburg–Landau hand-computed at `N=64` (reference `(507/64)π³ ≈ 245.62`), 2nd-order convergence sweep on GL over `N ∈ {16,32,64}` (slope ~2), per-arity dispatch tests for each of the three signatures, and `Pairwise` / `Kahan` agreement on the GL setup. The User Guide note doubles as the "tutorial doc page" deliverable from the roadmap.
+**Phase 5 — Explicit Euler diffusion solver is done.** Version bumped to `0.5.0`. The library now exposes time integration: `gridcalc::solve::explicitEuler<Rhs>(Field<double>&, rhs, dt, n_steps)` (generic, mutates in place; SFINAE-validates the RHS callable signature) and `gridcalc::solve::diffuse(Field<double>&, D, dt, n_steps)` (convenience driver for $\partial_t\psi = D\nabla^2\psi$, internally forwards to `explicitEuler` with `diff::laplacian` as the RHS and `D*dt` as the effective step). New public namespace `gridcalc::solve` and directory `include/gridcalc/solve/`. CFL stability is enforced before integration begins via the von Neumann bound $D\,dt \sum_a (1/h_a^2) \le 1/2$; violation throws `std::invalid_argument` with a diagnostic message. All six new tests pass: trig-eigenfunction matching the analytical `exp(-3 D T) ψ_0` after 100 steps, 2nd-order convergence sweep over `N ∈ {16,32,64}` with `dt ∝ h²`, Gaussian sanity (finite values, mass conserved via `func::integrate`, peak decreased), CFL violation throws, generic explicit-Euler on zero RHS bit-identical, negative `n_steps` rejected.
 
-**Phase 4 PR:** **#5** — *Phase 4 — Functional evaluation, callable API (scalar, periodic)* — merged into `main` on 2026-05-02 (rebase merge, commit `0e6250f`). CI was green on Ubuntu GCC and Ubuntu Clang.
+**Phase 5 PR:** open as of 2026-05-02 — *Phase 5 — Explicit Euler diffusion solver*. (PR number assigned at push time; STATUS will be refreshed post-merge.)
+
+**Previously (Phase 4):** PR #5 merged into `main` on 2026-05-02 (rebase merge, commit `0e6250f`). `func::evaluate` with SFINAE-detected callable arity for `f(ψ)`, `f(ψ, ∇ψ)`, or `f(ψ, ∇ψ, ∇²ψ)`; eager materialization of only the derivatives the callable actually consumes; Ginzburg–Landau hand-computed test passes within stencil-order error.
 
 **Previously (Phase 3):** PR #4 merged into `main` on 2026-05-02 (rebase merge, commit `b1c136d`). `func::integrate` with `Pairwise` (default) and `Kahan` tag dispatch on a periodic-midpoint quadrature rule. New public namespace `gridcalc::func` and directory `include/gridcalc/func/`. Cross-thread-count determinism is trivially met at single-threaded; Phase 20 expands the placeholder test.
 
@@ -18,7 +20,7 @@ Hand-off snapshot. Update this file whenever a phase completes or a major decisi
 
 **Previously (Phase 0):** PR #1 merged into `main` on 2026-05-01 with the buildable empty skeleton — CMake 3.20+ project, Eigen 3.4.0 + GoogleTest v1.14.0 pinned in `cmake/Dependencies.cmake`, repo layout per `tech-stack.md`, `.clang-format` / `.clang-tidy` / `CMakePresets.json`, GitHub Actions CI on Ubuntu (GCC + Clang), and the proprietary LICENSE.
 
-**Repository:** [github.com/byounghak/grid-calculus](https://github.com/byounghak/grid-calculus) — **private**, SSH remote `git@github.com:byounghak/grid-calculus.git`. Merged PRs to date: **#1** (Phase 0 — project scaffold), **#2** (Phase 1 — periodic 3D scalar grid + Laplacian), **#3** (Phase 2 — gradient and divergence), **#4** (Phase 3 — domain integration), **#5** (Phase 4 — functional evaluation). Current version `0.4.0`. CI: Ubuntu GCC + Ubuntu Clang on every PR (Phase 21 widens to Apple Clang + MSVC).
+**Repository:** [github.com/byounghak/grid-calculus](https://github.com/byounghak/grid-calculus) — **private**, SSH remote `git@github.com:byounghak/grid-calculus.git`. Merged PRs to date: **#1** (Phase 0), **#2** (Phase 1), **#3** (Phase 2), **#4** (Phase 3), **#5** (Phase 4), **#6** (lightweight pandoc PDF render workflow + Phase 1/2 doc-notes backfill). Phase 5 PR opens 2026-05-02. Current version `0.5.0`. CI: Ubuntu GCC + Ubuntu Clang on every PR plus a `Render Doc PDFs` job that uploads `gridcalc-docs-pdfs` artifacts (Phase 21 widens to Apple Clang + MSVC).
 
 **License:** Proprietary, all rights reserved (`LICENSE` is the short notice agreed in the Phase 0 spec round). No open-source license; redistribution requires authorization. Mission target unchanged: production / industrial use, distributed to authorized recipients only.
 
@@ -32,14 +34,14 @@ Hand-off snapshot. Update this file whenever a phase completes or a major decisi
 
 ## Next action
 
-**Phase 5 — Explicit Euler diffusion solver.** Per `CLAUDE.md`, the entry point is:
+**Phase 6 — RK4 + generic time integrator interface.** Per `CLAUDE.md`, the entry point is:
 
-1. Open branch `YYYY-MM-DD-phase-5-explicit-euler` (use today's date when starting).
-2. Use `AskUserQuestion` to pin down API choices (signature of the integrator — `solve/ExplicitEuler.hpp` taking an RHS callable vs `solve/Diffusion.hpp` as a thin convenience over the integrator; in-place vs returning a fresh `Field`; how the CFL stability check is surfaced — runtime warning, exception, compile-time tag).
-3. Create `specs/YYYY-MM-DD-phase-5-explicit-euler/{plan,requirements,validation}.md`.
-4. Implement: `solve/ExplicitEuler.hpp`, `solve/Diffusion.hpp`, plus stability check `D*dt/h² > 0.5/d`. Test: Gaussian initial condition matches the analytic diffusion solution after 100 steps within finite-difference error.
+1. Open branch `YYYY-MM-DD-phase-6-rk4-integrator` (use today's date when starting).
+2. Use `AskUserQuestion` to pin down API choices: shape of the generic `solve::Integrator` interface (free function with tag dispatch vs class with virtual `step()` vs CRTP); whether `explicitEuler` is refactored to consume the new interface or kept as a parallel free-function path; signature of the RK4 implementation; how `solve::diffuse` chooses between integrators.
+3. Create `specs/YYYY-MM-DD-phase-6-rk4-integrator/{plan,requirements,validation}.md`.
+4. Implement: `solve/Integrator.hpp` (generic interface) and `solve/RK4.hpp` (RK4 implementation). Refactor `solve::diffuse` to consume the integrator interface so caller can pick `ExplicitEuler` or `RK4`. Tests: RK4 4th-order time accuracy on the trig-eigenfunction heat-equation problem; convergence-order test confirms slope ~4.
 
-**Acceptance** (from `roadmap.md` Phase 5): numerical Gaussian-IC solution matches the analytic diffusion solution within finite-difference error after 100 steps.
+**Acceptance** (from `roadmap.md` Phase 6): RK4 demonstrates 4th-order time accuracy on a manufactured solution.
 
 A scheduled follow-up agent (`trig_01M1NGo52vJhJEjx4NyvoEdf`) will check in on 2026-05-22 to decide whether to file a tracking issue for Phase 21.
 
@@ -52,7 +54,8 @@ A scheduled follow-up agent (`trig_01M1NGo52vJhJEjx4NyvoEdf`) will check in on 2
 | 2      | Gradient and divergence (scalar)                        | Done        |
 | 3      | Domain integration (∫ over the grid)                    | Done        |
 | 4      | Functional evaluation, callable API                     | Done        |
-| 5–9    | Remaining periodic FD operators + spectral verification | Not started |
+| 5      | Explicit Euler diffusion solver                         | Done        |
+| 6–9    | Remaining periodic FD operators + spectral verification | Not started |
 | 10     | Documentation infrastructure                            | Not started |
 | 11–14  | Higher-order functionals, CH demo, vector/tensor fields | Not started |
 | 15–17  | Lattice basis, multi-atom basis, sublattice operators   | Not started |

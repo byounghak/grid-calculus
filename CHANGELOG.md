@@ -4,6 +4,55 @@ All notable changes to gridcalc are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## 0.5.0 — Phase 5: explicit Euler diffusion solver
+
+### Added
+
+- `gridcalc::solve::explicitEuler<Rhs>(Field<double>&, Rhs&&, double dt, int n_steps)`
+  — generic forward-Euler integrator; advances
+  $\psi^{n+1} = \psi^n + dt \cdot \mathrm{rhs}(\psi^n)$ for an arbitrary
+  RHS callable. Mutates `psi` in place. SFINAE-validates the callable
+  signature; throws `std::invalid_argument` on negative `dt` or
+  `n_steps`.
+- `gridcalc::solve::diffuse(Field<double>&, double D, double dt, int n_steps)`
+  — convenience driver for $\partial_t\psi = D\nabla^2\psi$. Internally
+  calls `explicitEuler` with `diff::laplacian` as the RHS and `D * dt`
+  as the effective step. Performs a von Neumann CFL check before
+  integration:
+  $D \cdot dt \cdot \sum_a (1/h_a^2) \le 1/2$.
+  Throws `std::invalid_argument` on violation, with a message naming
+  the offending values.
+- New public namespace `gridcalc::solve` and directory
+  `include/gridcalc/solve/`.
+
+### Tests
+
+- Trig eigenfunction `ψ_0 = sin(x)sin(y)sin(z)` decays to the analytical
+  `exp(-3 D T) ψ_0` after 100 explicit-Euler steps; relative max-norm
+  error `< 5e-2` at `N = 32`.
+- 2nd-order convergence sweep on the same trig IC over `N ∈ {16, 32, 64}`
+  with `dt ∝ h²`; log-log slope in `[1.8, 2.5]`.
+- Gaussian sanity test: finite values, mass conserved (via
+  `func::integrate`), peak max-norm decreased after integration.
+- CFL violation throws.
+- Generic `explicitEuler` with zero RHS leaves `psi` bit-identical.
+- Negative `n_steps` throws on both entry points.
+
+### Documentation
+
+- New User Guide note `docs/user-guide/notes/phase-5-explicit-euler.md`
+  with worked examples for `diffuse` and a custom-RHS use of
+  `explicitEuler`.
+- New Developer Note `docs/developer-note/notes/phase-5-explicit-euler.md`
+  with the von Neumann derivation of the CFL bound and four external
+  references (Strikwerda DOI, LeVeque DOI, Wikipedia heat-equation
+  permanent URL, Numerical Recipes ISBN).
+
+### Changed
+
+- `specs/CLAUDE.md` step 4a: new "Commit-message rules" subsection
+  forbidding `Co-Authored-By:` trailers in this repository.
+
 ## 0.4.0 — Phase 4: functional evaluation, callable API (scalar, periodic)
 
 ### Added
