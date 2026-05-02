@@ -10,7 +10,7 @@ The PR does not merge with any unticked items. "Acceptance" rows are pulled from
 
 ## Acceptance (from roadmap)
 
-- [ ] `LaplacianTest.RecoversTrigEigenvalue` passes — Laplacian of $\sin(k_x x)\sin(k_y y)\sin(k_z z)$ at $\mathbf{k} = (1, 2, 1)$, $N=32$, $L=2\pi$ recovers $-6$ × the input within relative max-norm `5e-3`.
+- [ ] `LaplacianTest.RecoversTrigEigenvalue` passes — Laplacian of $\sin(k_x x)\sin(k_y y)\sin(k_z z)$ at $\mathbf{k} = (1, 2, 1)$, $N=32$, $L=2\pi$ recovers $-6$ × the input within relative max-norm `1.5e-2` (the leading-order analytic error is $\approx 9.6 \times 10^{-3}$; see `requirements.md`).
 - [ ] `LaplacianTest.SecondOrderConvergence` passes — sweep $N \in \{16, 32, 64\}$ on $L=2\pi$, $\mathbf{k}=(1,1,1)$. Error factor between successive resolutions in `[3.5, 4.5]`; least-squares log-log slope in `[1.8, 2.2]`.
 
 ## Tests (new)
