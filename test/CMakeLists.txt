@@ -4,6 +4,7 @@ add_executable(gridcalc_tests
     version_test.cpp
     index_policy_test.cpp
     grid_test.cpp
+    field_test.cpp
 )
 
 target_link_libraries(gridcalc_tests PRIVATE
