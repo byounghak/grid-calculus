@@ -6,9 +6,12 @@ Hand-off snapshot. Update this file whenever a phase completes or a major decisi
 
 ## Where the project stands
 
-Pre-implementation. Only the constitution and workflow docs exist in `specs/`; there is no code, no `CMakeLists.txt`, no local git repository yet.
+Pre-implementation. The constitution and workflow docs are committed on `main`; there is no code yet, no `CMakeLists.txt`.
 
-**Repository:** [github.com/byounghak/grid-calculus](https://github.com/byounghak/grid-calculus) — **private**. Remote registered; not yet pushed.
+**Repository:** [github.com/byounghak/grid-calculus](https://github.com/byounghak/grid-calculus) — **private**. Local `main` tracks `origin/main` over SSH (`git@github.com:byounghak/grid-calculus.git`). Two commits pushed:
+
+- `docs: add initial constitution and workflow specs` (`mission`, `tech-stack`, `roadmap`, `CLAUDE`, `STATUS`)
+- `chore: add .gitignore for build artifacts, doc outputs, editor clutter`
 
 **License:** Proprietary. All rights reserved by the author; no open-source license. The `LICENSE` file added in Phase 0 will carry an "All rights reserved" notice rather than a permissive license. Mission/scope unchanged: production / industrial use, distributed to authorized recipients only.
 
