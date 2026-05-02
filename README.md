@@ -1,5 +1,7 @@
 # gridcalc
 
+[![CI](https://github.com/byounghak/grid-calculus/actions/workflows/ci.yml/badge.svg)](https://github.com/byounghak/grid-calculus/actions/workflows/ci.yml)
+
 Differential operators and functional evaluation on periodic crystalline grids,
 in C++17. Aimed at production / industrial materials-science workflows; see
 [`specs/mission.md`](specs/mission.md) for the full statement of purpose.
