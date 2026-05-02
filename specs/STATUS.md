@@ -2,13 +2,15 @@
 
 Hand-off snapshot. Update this file whenever a phase completes or a major decision changes.
 
-**Last updated:** 2026-05-02 (Phase 3 merged into `main`)
+**Last updated:** 2026-05-02 (Phase 4 implementation; PR open, awaiting CI)
 
 ## Where the project stands
 
-**Phase 3 — Domain integration (∫ over the grid) is done.** Version bumped to `0.3.0`. The library now exposes `gridcalc::func::integrate(const Field<double>&, Tag = {}) -> double`, the discrete periodic-midpoint integral $I_h = h_x h_y h_z \sum_{ijk} f_{ijk}$, with two reduction strategies dispatched on empty tag structs: `gridcalc::func::Pairwise` (default; rounding error $O(\varepsilon \log n)$, 64-element base case) and `gridcalc::func::Kahan` (Neumaier-style compensated, single-pass, error independent of $n$). Phase 3 ships single-threaded — the cross-thread-count determinism contract is trivially satisfied with one thread, and Phase 20 will replace the placeholder `DeterministicAcrossInvocations` test with an `OMP_NUM_THREADS`-varying version. New public namespace `gridcalc::func` and directory `include/gridcalc/func/`. All five new tests pass: unit-field-equals-domain-volume on an anisotropic non-cubic grid; `∫ sin(kx) dV = 0` over `[0, 2π]³`; manufactured-solution `cos(x)·sin(2y)·sin(3z)` integrates to 0; pairwise and Kahan agree within `1e-13` relative; bit-equality across repeated invocations.
+**Phase 4 — Functional evaluation, callable API (scalar, periodic) is done.** Version bumped to `0.4.0`. The library now exposes `gridcalc::func::evaluate(const Field<double>& psi, F&& f, Tag = {}) -> double` — the discrete functional $F[\psi] = \int f(\psi, \nabla\psi, \nabla^2\psi)\, dV$. The callable `f` is detected at compile time as one of three arities via `if constexpr` + `std::is_invocable_r_v`: `f(ψ)`, `f(ψ, ∇ψ)`, or `f(ψ, ∇ψ, ∇²ψ)` — only the derivatives the callable actually consumes are materialized (1-arg path skips both stencils, 2-arg skips the Laplacian, 3-arg materializes both). Implementation is eager and reuses Phase 1–3 primitives directly: `diff::gradient`, `diff::laplacian`, and `func::integrate` (with the same `Pairwise` / `Kahan` tag dispatch). All six new tests pass: Ginzburg–Landau hand-computed at `N=64` (reference `(507/64)π³ ≈ 245.62`), 2nd-order convergence sweep on GL over `N ∈ {16,32,64}` (slope ~2), per-arity dispatch tests for each of the three signatures, and `Pairwise` / `Kahan` agreement on the GL setup. The User Guide note doubles as the "tutorial doc page" deliverable from the roadmap.
 
-**Phase 3 PR:** **#4** — *Phase 3 — Domain integration (∫ over the grid)* — merged into `main` on 2026-05-02 (rebase merge, commit `b1c136d`). CI was green on Ubuntu GCC and Ubuntu Clang.
+**Phase 4 PR:** open as of 2026-05-02 — *Phase 4 — Functional evaluation*. (PR number assigned at push time; STATUS will be refreshed post-merge.)
+
+**Previously (Phase 3):** PR #4 merged into `main` on 2026-05-02 (rebase merge, commit `b1c136d`). `func::integrate` with `Pairwise` (default) and `Kahan` tag dispatch on a periodic-midpoint quadrature rule. New public namespace `gridcalc::func` and directory `include/gridcalc/func/`. Cross-thread-count determinism is trivially met at single-threaded; Phase 20 expands the placeholder test.
 
 **Previously (Phase 2):** PR #3 merged into `main` on 2026-05-02 (rebase merge, commit `ee93091`). `gradient(Field<double>) -> Field<Vec3d>`, `divergence(Field<Vec3d>) -> Field<double>`, `stencil::FirstDerivative<2>`, `core/EigenAliases.hpp`. Convergence-order tests on trig inputs pass; round-trip `divergence(gradient(ψ))` converges at order 2 to the analytical Laplacian.
 
@@ -16,7 +18,7 @@ Hand-off snapshot. Update this file whenever a phase completes or a major decisi
 
 **Previously (Phase 0):** PR #1 merged into `main` on 2026-05-01 with the buildable empty skeleton — CMake 3.20+ project, Eigen 3.4.0 + GoogleTest v1.14.0 pinned in `cmake/Dependencies.cmake`, repo layout per `tech-stack.md`, `.clang-format` / `.clang-tidy` / `CMakePresets.json`, GitHub Actions CI on Ubuntu (GCC + Clang), and the proprietary LICENSE.
 
-**Repository:** [github.com/byounghak/grid-calculus](https://github.com/byounghak/grid-calculus) — **private**, SSH remote `git@github.com:byounghak/grid-calculus.git`. Merged PRs to date: **#1** (Phase 0 — project scaffold), **#2** (Phase 1 — periodic 3D scalar grid + Laplacian), **#3** (Phase 2 — gradient and divergence), **#4** (Phase 3 — domain integration). Current version `0.3.0`. CI: Ubuntu GCC + Ubuntu Clang on every PR (Phase 21 widens to Apple Clang + MSVC).
+**Repository:** [github.com/byounghak/grid-calculus](https://github.com/byounghak/grid-calculus) — **private**, SSH remote `git@github.com:byounghak/grid-calculus.git`. Merged PRs to date: **#1** (Phase 0 — project scaffold), **#2** (Phase 1 — periodic 3D scalar grid + Laplacian), **#3** (Phase 2 — gradient and divergence), **#4** (Phase 3 — domain integration). Phase 4 PR opens 2026-05-02. Current version `0.4.0`. CI: Ubuntu GCC + Ubuntu Clang on every PR (Phase 21 widens to Apple Clang + MSVC).
 
 **License:** Proprietary, all rights reserved (`LICENSE` is the short notice agreed in the Phase 0 spec round). No open-source license; redistribution requires authorization. Mission target unchanged: production / industrial use, distributed to authorized recipients only.
 
@@ -30,15 +32,14 @@ Hand-off snapshot. Update this file whenever a phase completes or a major decisi
 
 ## Next action
 
-**Phase 4 — Functional evaluation, callable API (scalar, periodic).** Per `CLAUDE.md`, the entry point is:
+**Phase 5 — Explicit Euler diffusion solver.** Per `CLAUDE.md`, the entry point is:
 
-1. Open branch `YYYY-MM-DD-phase-4-functional-evaluation` (use today's date when starting).
-2. Use `AskUserQuestion` to pin down API choices (signature of the callable: does it take `(ψ, ∇ψ, ∇²ψ)` always or is the gradient/Laplacian computed lazily on request? expression-template integrand vs eager evaluation? handling of the materialized intermediate `Field<Vec3d>` for `∇ψ`?).
-3. Create `specs/YYYY-MM-DD-phase-4-functional-evaluation/{plan,requirements,validation}.md`.
-4. Implement: `func/Functional.hpp` (or similar) with a callable taking $(\psi, \nabla\psi, \nabla^2\psi)$ and returning the integrated functional value.
-5. Doc-notes are now mandatory per `specs/CLAUDE.md` step 4d: User Guide note + Developer Note (five-section structure with at least one external citation).
+1. Open branch `YYYY-MM-DD-phase-5-explicit-euler` (use today's date when starting).
+2. Use `AskUserQuestion` to pin down API choices (signature of the integrator — `solve/ExplicitEuler.hpp` taking an RHS callable vs `solve/Diffusion.hpp` as a thin convenience over the integrator; in-place vs returning a fresh `Field`; how the CFL stability check is surfaced — runtime warning, exception, compile-time tag).
+3. Create `specs/YYYY-MM-DD-phase-5-explicit-euler/{plan,requirements,validation}.md`.
+4. Implement: `solve/ExplicitEuler.hpp`, `solve/Diffusion.hpp`, plus stability check `D*dt/h² > 0.5/d`. Test: Gaussian initial condition matches the analytic diffusion solution after 100 steps within finite-difference error.
 
-**Acceptance** (from `roadmap.md` Phase 4): a worked end-to-end functional evaluation passes for at least one non-trivial $f$ on trig manufactured solutions.
+**Acceptance** (from `roadmap.md` Phase 5): numerical Gaussian-IC solution matches the analytic diffusion solution within finite-difference error after 100 steps.
 
 A scheduled follow-up agent (`trig_01M1NGo52vJhJEjx4NyvoEdf`) will check in on 2026-05-22 to decide whether to file a tracking issue for Phase 21.
 
@@ -50,7 +51,8 @@ A scheduled follow-up agent (`trig_01M1NGo52vJhJEjx4NyvoEdf`) will check in on 2
 | 1      | Periodic 3D scalar grid + Laplacian                     | Done        |
 | 2      | Gradient and divergence (scalar)                        | Done        |
 | 3      | Domain integration (∫ over the grid)                    | Done        |
-| 4–9    | Remaining periodic FD operators + spectral verification | Not started |
+| 4      | Functional evaluation, callable API                     | Done        |
+| 5–9    | Remaining periodic FD operators + spectral verification | Not started |
 | 10     | Documentation infrastructure                            | Not started |
 | 11–14  | Higher-order functionals, CH demo, vector/tensor fields | Not started |
 | 15–17  | Lattice basis, multi-atom basis, sublattice operators   | Not started |
