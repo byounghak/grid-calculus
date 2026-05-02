@@ -63,7 +63,7 @@ This document pins the technology choices for the library. Changes require a wri
 
 - **Doxygen** for API reference, generated from header comments. Graphviz `dot` enables class / include / call graphs.
 - Header comments use Doxygen `///` triple-slash markers with backslash tags (`\brief`, `\param`, `\returns`, `\throws`, `\note`, `\file`, `\since`). Every public class, function, member variable, and type alias in the public headers carries a Doxygen comment, including a `\since` tag noting the version it was introduced.
-- **Developer Note** and **User Guide** are authored in LaTeX and built to PDF (infrastructure stands up in Phase 10; final v1.0 content polish lands in Phase 21). PDFs are the canonical narrative documentation; there is no hosted HTML site (the repository is private and we do not maintain a public docs mirror). The Developer Note is hand-written and `\input{}`s Doxygen-generated LaTeX subfiles for its auto-built API reference and Graphviz diagrams; the User Guide is fully hand-authored with no Doxygen integration.
+- **Developer Note** and **User Guide** are authored in LaTeX and built to PDF (infrastructure stands up in Phase 10; final v1.0 content polish lands in Phase 22). PDFs are the canonical narrative documentation; there is no hosted HTML site (the repository is private and we do not maintain a public docs mirror). The Developer Note is hand-written and `\input{}`s Doxygen-generated LaTeX subfiles for its auto-built API reference and Graphviz diagrams; the User Guide is fully hand-authored with no Doxygen integration.
 - LaTeX toolchain: **`pdflatex`** for both documents (locked early in the documentation work). Document classes are split: the User Guide uses **`memoir`** for nicer reader-facing typography; the Developer Note uses **`book`** because `doxygen.sty` (which the Developer Note `\input{}`s for per-class API subfiles) was designed for `book`-class output and conflicts with memoir on `\hangpara`, `\hangparas`, and several preamble packages (`geometry`, `fancyhdr`, `tocloft`, `changepage`). The split was discovered during smoke testing of the integrated build and is the minimum-cost workaround — both documents share the engine, only the class differs. Driven by `latexmk -pdf`; CI installs `texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended texlive-pictures latexmk` (Ubuntu names) plus `doxygen graphviz`. An engine switch (xelatex / lualatex) requires a documented exception, not a re-vote.
 - PDFs are CI build artifacts; `.tex` sources, figures, `.bib`, and the `Doxyfile` live in the repo, but `*.pdf` and Doxygen output directories are gitignored.
 - `README.md` and `specs/` for prose; no separate docs hosting site initially.
@@ -97,7 +97,7 @@ gridcalc/
 ├── test/                     GoogleTest unit and convergence tests
 ├── bench/                    Google Benchmark microbenchmarks
 ├── examples/                 Self-contained programs (Cahn–Hilliard, etc.)
-├── docs/                     Sphinx sources, Doxygen config
+├── docs/                     Doxygen config + LaTeX sources for User Guide and Developer Note
 └── specs/                    mission.md, tech-stack.md, roadmap.md (this directory)
 ```
 

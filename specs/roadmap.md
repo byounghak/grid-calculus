@@ -19,10 +19,10 @@ The ordering is deliberate: we drive a thin slice (scalar field, periodic, basic
   - `CMakeLists.txt`, `cmake/Dependencies.cmake` pinning Eigen + GoogleTest.
   - Repository layout per `tech-stack.md`.
   - One trivial test (`gridcalc::version()` returns a known string).
-  - GitHub Actions CI: GCC + Clang + Apple Clang + MSVC, all green.
+  - GitHub Actions CI: Ubuntu GCC + Ubuntu Clang, both green. (Apple Clang and MSVC jobs are deferred to Phase 21 — Cross-platform CI hardening.)
   - clang-format and clang-tidy configs.
   - `README.md` stub linking to `specs/`.
-- **Acceptance.** Fresh clone → `cmake -B build && cmake --build build && ctest --test-dir build` passes on all four CI compilers.
+- **Acceptance.** Fresh clone → `cmake -B build && cmake --build build && ctest --test-dir build` passes on Ubuntu GCC and Ubuntu Clang. The full four-family CI bar from `tech-stack.md`'s compiler-support matrix is enforced at Phase 21, not here.
 
 ## Phase 1 — Periodic 3D scalar grid + Laplacian
 
@@ -123,7 +123,7 @@ The ordering is deliberate: we drive a thin slice (scalar field, periodic, basic
 
 ## Phase 10 — Documentation infrastructure
 
-- **Goal.** Stand up the full documentation toolchain so every later phase can land its own incremental docs (API reference, User Guide chapters, Developer Note sections) into a working build. This phase is plumbing — each subsequent feature phase remains responsible for the doc deliverables it already lists (Cahn–Hilliard tutorial in Phase 12, diamond-lattice example in Phase 16, etc.); they fold in here rather than waiting for the v1.0 polish at Phase 21.
+- **Goal.** Stand up the full documentation toolchain so every later phase can land its own incremental docs (API reference, User Guide chapters, Developer Note sections) into a working build. This phase is plumbing — each subsequent feature phase remains responsible for the doc deliverables it already lists (Cahn–Hilliard tutorial in Phase 12, diamond-lattice example in Phase 16, etc.); they fold in here rather than waiting for the v1.0 polish at Phase 22.
 - **Deliverables.**
   - `docs/Doxyfile` configured for the public headers; Graphviz `dot` enabled for class / include / call graphs.
   - LaTeX skeletons for the **Developer Note** (`book` class; `\input{}`s Doxygen-generated subfiles for the API reference and Graphviz diagrams) and the **User Guide** (`memoir` class; fully hand-authored). Both built with `latexmk -pdf`.
@@ -240,7 +240,20 @@ The ordering is deliberate: we drive a thin slice (scalar field, periodic, basic
   - Published baseline numbers in `bench/baselines/`.
 - **Acceptance.** Documented scaling to all CI cores; reproducible numbers committed to the repo.
 
-## Phase 21 — Documentation polish, tutorial, v1.0 release
+## Phase 21 — Cross-platform CI hardening (Apple Clang + MSVC)
+
+- **Goal.** Bring the GitHub Actions matrix up to the full four-family bar promised in `tech-stack.md` ("Compiler & platform support" + "Compiler support matrix"). Phase 0 deliberately shipped Linux-only CI to keep early iteration cheap; this phase closes the gap before v1.0.
+- **Deliverables.**
+  - GitHub Actions CI matrix expanded to include macOS (Apple Clang) and Windows (MSVC 19.30+, Visual Studio 2022). Both run the full configure + build + `ctest` pipeline of every prior phase's tests.
+  - Whatever portability fixes are required to make the Apple Clang and MSVC jobs green: header `#include` cleanups, `__attribute__((...))` → `[[gnu::...]]`-with-MSVC-fallback macro shims, MSVC-specific warning suppressions, path-separator and case-sensitivity fixes, etc.
+  - Optionally widen GCC and Clang version coverage on the Linux jobs (GCC 9/11/13, Clang 13/16) per the support matrix in `tech-stack.md`. May land in this phase or be deferred to a follow-up depending on the size of the portability fixes.
+  - `README.md` updated: build snippet covers macOS and Windows in addition to Linux.
+- **Acceptance.**
+  - All four compiler families (GCC, Clang, Apple Clang, MSVC) are blocking-CI tier-1 with green builds on the latest tagged release of every prior phase's test suite.
+  - No regressions on Linux: GCC and Clang jobs remain green throughout the portability work.
+  - `tech-stack.md`'s compiler support matrix is now actually enforced rather than aspirational.
+
+## Phase 22 — Documentation polish, tutorial, v1.0 release
 
 - **Goal.** Release-ready per the production/industrial bar in `mission.md`. Most documentation content has accumulated incrementally since Phase 10; this phase is the final pass over completeness, polish, and the release artifacts. Distribution is private — release assets go to authorized recipients, not a public download page.
 - **Deliverables.**
@@ -266,6 +279,7 @@ These appear on the radar but are out of scope until post-1.0:
 
 ## Risks to watch
 
+- **Cross-platform portability drift.** Phase 0 ships Linux-only CI (Ubuntu GCC + Clang) and the four-family bar from `tech-stack.md` is not enforced until Phase 21. Apple Clang / MSVC portability bugs may accumulate across Phases 1–20 and surface in bulk at Phase 21. Mitigation: developers with macOS or Windows machines should spot-check builds locally on milestone phases (4, 9, 16); the Phase 21 fix-up budget should be planned as larger than a typical phase.
 - **Eigen's unsupported tensor module.** If `Eigen::TensorFixedSize` proves unstable for our rank-3/4 needs, we fall back to a small in-house `Tensor3` / `Tensor4` (deferred to phase 13+). Detection criterion: any compiler in the support matrix fails to build the tensor module headers cleanly.
 - **High-rank intermediate tensors.** A 4th-order gradient of rank-2 data is rank-6 (729 components/point). Functionals must be expressible as contractions that **never materialize** the full tensor — this constrains the API design at phase 11 and 14. Contraction expression templates may be needed.
 - **Boundary stencils at high accuracy.** A 4th-order biharmonic needs ~9 points; one-sided stencils near boundaries can be ill-conditioned. Phase 18 may require restricting accuracy in the boundary layer; this is acceptable and will be documented.

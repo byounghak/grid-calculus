@@ -6,7 +6,7 @@ Hand-off snapshot. Update this file whenever a phase completes or a major decisi
 
 ## Where the project stands
 
-Pre-implementation. The constitution and workflow docs are committed on `main`; there is no code yet, no `CMakeLists.txt`.
+**Phase 0 — Project scaffold** is in progress on branch `2026-05-01-phase-0-project-scaffold`. The Phase 0 spec files (`specs/2026-05-01-phase-0-project-scaffold/{plan,requirements,validation}.md`) are committed; the global specs (this file, `roadmap.md`, `tech-stack.md`) have been revised to reflect the Linux-only CI scope and the new Phase 21. Scaffold implementation (CMake + skeleton + Ubuntu CI) is the next commit on the branch.
 
 **Repository:** [github.com/byounghak/grid-calculus](https://github.com/byounghak/grid-calculus) — **private**. Local `main` tracks `origin/main` over SSH (`git@github.com:byounghak/grid-calculus.git`). Two commits pushed:
 
@@ -19,35 +19,33 @@ Pre-implementation. The constitution and workflow docs are committed on `main`; 
 
 - [mission.md](mission.md) — purpose, audience (production/industrial materials science), quality bar, in/out-of-scope.
 - [tech-stack.md](tech-stack.md) — C++17 + Eigen + GoogleTest + Google Benchmark + PocketFFT (verification only) + OpenMP. CMake 3.20+. Docs: Doxygen + LaTeX User Guide (memoir) + Developer Note (book) → PDFs only (no Sphinx, no public HTML site since the repo is private).
-- [roadmap.md](roadmap.md) — 22 phases, 0 through 21. Phase 0 = project scaffold; Phase 21 = v1.0 release.
+- [roadmap.md](roadmap.md) — 23 phases, 0 through 22. Phase 0 = project scaffold; Phase 21 = cross-platform CI hardening; Phase 22 = v1.0 release.
 - [CLAUDE.md](CLAUDE.md) — feature workflow runbook. Auto-loaded by Claude Code in this directory.
 - `STATUS.md` — this file.
 
 ## Next action
 
-**Phase 0 — Project scaffold.**
+**Finish Phase 0 — Project scaffold** on branch `2026-05-01-phase-0-project-scaffold`. The plan/requirements/validation specs are committed; the global specs are revised. The remaining commits land the actual scaffold and the CI workflow:
 
-Per `CLAUDE.md`, the entry point is:
+1. Implement the scaffold per `specs/2026-05-01-phase-0-project-scaffold/plan.md` Group 3: `CMakeLists.txt`, `cmake/Dependencies.cmake` (Eigen 3.4.0 + GoogleTest v1.14.0 pinned), repo skeleton with `.gitkeep` markers, `include/gridcalc/version.hpp.in`, the trivial `VersionTest`, `.clang-format`, `.clang-tidy`, `CMakePresets.json`, `README.md`, `LICENSE`.
+2. Land Group 4: GitHub Actions CI for Ubuntu GCC + Ubuntu Clang.
+3. Walk the `validation.md` checklist; merge the PR once every box ticks.
 
-1. Open branch `YYYY-MM-DD-phase-0-project-scaffold`.
-2. Use `AskUserQuestion` to pin down scaffold-specific details (e.g., GitHub org / repo name, license file, initial namespace name `gridcalc::`).
-3. Create `specs/YYYY-MM-DD-phase-0-project-scaffold/` with `plan.md`, `requirements.md`, `validation.md`.
-4. Then implement the scaffold: `CMakeLists.txt`, `cmake/Dependencies.cmake` (pinned Eigen + GoogleTest), repo skeleton per `tech-stack.md`, GitHub Actions CI, clang-format / clang-tidy configs, README stub.
-
-**Acceptance** (from roadmap): fresh clone → `cmake -B build && cmake --build build && ctest --test-dir build` passes on GCC + Clang + Apple Clang + MSVC.
+**Acceptance (revised; see `roadmap.md` Phase 0):** fresh clone → `cmake -B build && cmake --build build && ctest --test-dir build` passes on Ubuntu GCC and Ubuntu Clang. The four-family bar (adding Apple Clang and MSVC) is deferred to the new **Phase 21 — Cross-platform CI hardening** before v1.0.
 
 ## Phase progress
 
-| Phase | Title | Status |
-|---|---|---|
-| 0 | Project scaffold | Not started |
-| 1–9 | Core periodic FD operators + spectral verification | Not started |
-| 10 | Documentation infrastructure | Not started |
-| 11–14 | Higher-order functionals, CH demo, vector/tensor fields | Not started |
-| 15–17 | Lattice basis, multi-atom basis, sublattice operators | Not started |
-| 18–19 | Non-periodic BCs, implicit diffusion | Not started |
-| 20 | Performance pass | Not started |
-| 21 | v1.0 release | Not started |
+| Phase  | Title                                                   | Status      |
+| ------ | ------------------------------------------------------- | ----------- |
+| 0      | Project scaffold                                        | In progress |
+| 1–9    | Core periodic FD operators + spectral verification      | Not started |
+| 10     | Documentation infrastructure                            | Not started |
+| 11–14  | Higher-order functionals, CH demo, vector/tensor fields | Not started |
+| 15–17  | Lattice basis, multi-atom basis, sublattice operators   | Not started |
+| 18–19  | Non-periodic BCs, implicit diffusion                    | Not started |
+| 20     | Performance pass                                        | Not started |
+| 21     | Cross-platform CI hardening (Apple Clang + MSVC)        | Not started |
+| 22     | v1.0 release                                            | Not started |
 
 ## Decisions worth knowing (encoded in the specs but easy to miss)
 
@@ -57,6 +55,7 @@ Per `CLAUDE.md`, the entry point is:
 - **FFT is verification only** — never the production differentiation engine, never a solver. PocketFFT, header-only, behind `-DGRIDCALC_USE_FFT=ON` (default on). The CI cross-check between FD and FFT operators is a permanent gate from Phase 9 onward.
 - **Documentation toolchain split.** User Guide = `memoir` class (typography); Developer Note = `book` class because `doxygen.sty` conflicts with `memoir` on `\hangpara` / `\hangparas` and several preamble packages. `pdflatex` is locked. **Sphinx was dropped** when the repo went private — PDFs are now the only narrative-documentation output, and the "Hello grid" content moved into the User Guide as a chapter (was originally planned as a Sphinx page).
 - **Repository visibility: private; license: proprietary.** No open-source license; redistribution requires authorization. `LICENSE` file added in Phase 0 will be an "All rights reserved" notice. There is no public docs hosting; PDFs ship as private-repo release assets only. Mission target ("production / industrial") is unchanged.
+- **Phase 0 ships Linux-only CI.** The original roadmap acceptance bar for Phase 0 listed all four compiler families (GCC, Clang, Apple Clang, MSVC). Decided in the Phase 0 spec round to narrow that to Ubuntu GCC + Ubuntu Clang for cheaper iteration, and to insert a new **Phase 21 — Cross-platform CI hardening** before the v1.0 release phase (which moved to Phase 22). The full four-family compiler-support matrix in `tech-stack.md` is unchanged — it just isn't enforced in CI until Phase 21. Known accumulated-portability-bug risk recorded in `roadmap.md` "Risks to watch."
 - **Code style.** Leading-underscore member vars (`_lattice`, never `_Capital` or `__double`); camelCase verb-prefixed methods (`getX`, `isY`, `findZ`, `buildW`); snake_case struct fields; PascalCase types; STL-protocol carve-out (`begin`/`end`/`size`/`empty`/`data`/`swap` keep canonical names as 1-line shims that delegate to the verb-prefixed accessor).
 - **Compiler tier.** GCC, Clang, Apple Clang, MSVC are all blocking-CI tier-1. The "Windows best-effort" line in `tech-stack.md` is a support-priority statement, not a CI demotion.
 
