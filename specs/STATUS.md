@@ -6,7 +6,7 @@ Hand-off snapshot. Update this file whenever a phase completes or a major decisi
 
 ## Where the project stands
 
-**Phase 0 — Project scaffold** is in progress on branch `2026-05-01-phase-0-project-scaffold`. The Phase 0 spec files (`specs/2026-05-01-phase-0-project-scaffold/{plan,requirements,validation}.md`) are committed; the global specs (this file, `roadmap.md`, `tech-stack.md`) have been revised to reflect the Linux-only CI scope and the new Phase 21. Scaffold implementation (CMake + skeleton + Ubuntu CI) is the next commit on the branch.
+**Phase 0 — Project scaffold is done.** PR #1 merged into `main` on 2026-05-01 (Ubuntu GCC + Ubuntu Clang both green; locally spot-checked on Apple Clang via Homebrew). The repository now has a buildable skeleton: CMake 3.20+ project, Eigen 3.4.0 + GoogleTest v1.14.0 pinned in `cmake/Dependencies.cmake`, full `include/gridcalc/{core,tensor,stencil,diff,spectral,func,solve}/` placeholder tree, `gridcalc::version()` shim returning `"0.0.1"`, `.clang-format` / `.clang-tidy` / `CMakePresets.json`, GitHub Actions CI on Ubuntu, and the proprietary LICENSE.
 
 **Repository:** [github.com/byounghak/grid-calculus](https://github.com/byounghak/grid-calculus) — **private**. Local `main` tracks `origin/main` over SSH (`git@github.com:byounghak/grid-calculus.git`). Two commits pushed:
 
@@ -25,19 +25,22 @@ Hand-off snapshot. Update this file whenever a phase completes or a major decisi
 
 ## Next action
 
-**Finish Phase 0 — Project scaffold** on branch `2026-05-01-phase-0-project-scaffold`. The plan/requirements/validation specs are committed; the global specs are revised. The remaining commits land the actual scaffold and the CI workflow:
+**Phase 1 — Periodic 3D scalar grid + Laplacian.** Per `CLAUDE.md`, the entry point is:
 
-1. Implement the scaffold per `specs/2026-05-01-phase-0-project-scaffold/plan.md` Group 3: `CMakeLists.txt`, `cmake/Dependencies.cmake` (Eigen 3.4.0 + GoogleTest v1.14.0 pinned), repo skeleton with `.gitkeep` markers, `include/gridcalc/version.hpp.in`, the trivial `VersionTest`, `.clang-format`, `.clang-tidy`, `CMakePresets.json`, `README.md`, `LICENSE`.
-2. Land Group 4: GitHub Actions CI for Ubuntu GCC + Ubuntu Clang.
-3. Walk the `validation.md` checklist; merge the PR once every box ticks.
+1. Open branch `YYYY-MM-DD-phase-1-laplacian` (use today's date when starting).
+2. Use `AskUserQuestion` to pin down API choices (signatures for `Grid` / `Field` / `IndexPolicy::Periodic`, default accuracy order, naming, test-data choice for the convergence sweep).
+3. Create `specs/YYYY-MM-DD-phase-1-laplacian/{plan,requirements,validation}.md`.
+4. Implement: `core/Grid.hpp`, `core/Field.hpp`, `core/IndexPolicy.hpp`, `stencil/CentralDifference.hpp`, `diff/Laplacian.hpp`, plus the convergence test on $\sin(k_x x)\sin(k_y y)\sin(k_z z)$.
 
-**Acceptance (revised; see `roadmap.md` Phase 0):** fresh clone → `cmake -B build && cmake --build build && ctest --test-dir build` passes on Ubuntu GCC and Ubuntu Clang. The four-family bar (adding Apple Clang and MSVC) is deferred to the new **Phase 21 — Cross-platform CI hardening** before v1.0.
+**Acceptance** (from `roadmap.md` Phase 1): Laplacian of $\sin(\mathbf{k}\cdot\mathbf{x})$ recovers $-|\mathbf{k}|^2$ times the input; halving $h$ reduces error by 4× (log-log slope ≈ 2).
+
+A scheduled follow-up agent (`trig_01M1NGo52vJhJEjx4NyvoEdf`) will check in on 2026-05-22 to decide whether to file a tracking issue for Phase 21.
 
 ## Phase progress
 
 | Phase  | Title                                                   | Status      |
 | ------ | ------------------------------------------------------- | ----------- |
-| 0      | Project scaffold                                        | In progress |
+| 0      | Project scaffold                                        | Done        |
 | 1–9    | Core periodic FD operators + spectral verification      | Not started |
 | 10     | Documentation infrastructure                            | Not started |
 | 11–14  | Higher-order functionals, CH demo, vector/tensor fields | Not started |
