@@ -89,6 +89,7 @@ A scheduled follow-up agent (`trig_01M1NGo52vJhJEjx4NyvoEdf`) will check in on 2
 ## Open / deferred items
 
 - **Eigen unsupported tensor module risk.** May fall back to in-house `Tensor3` / `Tensor4` if `Eigen::TensorFixedSize` doesn't build cleanly across the compiler matrix. Decision deferred until Phase 13 (vector/tensor fields) actually uses it.
+- **Boundary-condition tests for the Euler diffusion solver.** Deferred to Phase 18. Phase 5's `solve::diffuse` and `solve::explicitEuler` are periodic-only by construction (only `IndexPolicy::Periodic` exists); the Phase 18 Dirichlet / Neumann work needs to add the corresponding solver tests (Gaussian decay against an absorbing wall, no-flux mass conservation at a reflective wall, etc.) at the same time as the new boundary policies. Tracked here so it isn't lost when Phase 18 starts.
 
 ## How to resume in a new session
 
