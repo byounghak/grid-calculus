@@ -51,6 +51,12 @@ target_include_directories(gridcalc INTERFACE
 )
 target_compile_features(gridcalc INTERFACE cxx_std_17)
 
+# Eigen's own headers do not compile clean under -Wconversion. Inject its
+# include path with the SYSTEM keyword so warnings from <Eigen/...> are
+# suppressed while our own code still gets the full set of warnings.
+get_target_property(_eigen_includes Eigen3::Eigen INTERFACE_INCLUDE_DIRECTORIES)
+target_include_directories(gridcalc SYSTEM INTERFACE ${_eigen_includes})
+
 if(GRIDCALC_BUILD_TESTS)
     enable_testing()
     add_subdirectory(test)
