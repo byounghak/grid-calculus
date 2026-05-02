@@ -8,6 +8,7 @@ add_executable(gridcalc_tests
     laplacian_test.cpp
     gradient_test.cpp
     divergence_test.cpp
+    integrate_test.cpp
 )
 
 target_link_libraries(gridcalc_tests PRIVATE
