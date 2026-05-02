@@ -4,6 +4,37 @@ All notable changes to gridcalc are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## 0.3.0 — Phase 3: domain integration (∫ over the grid)
+
+### Added
+
+- `gridcalc::func::integrate(const Field<double>&, Tag = {}) -> double` —
+  discrete periodic-midpoint integral
+  $I_h = h_x h_y h_z \sum_{i,j,k} f_{ijk}$. Two reduction tags:
+  - `gridcalc::func::Pairwise` (default): pairwise recursive summation,
+    rounding error $O(\varepsilon \log n)$, 64-element base case.
+  - `gridcalc::func::Kahan`: Neumaier-style compensated summation,
+    rounding error independent of $n$ to first order.
+- New public namespace `gridcalc::func` and corresponding directory
+  `include/gridcalc/func/`.
+
+### Tests
+
+- Unit-field-recovers-domain-volume on an anisotropic non-cubic Grid.
+- $\int \sin(kx)\, dV = 0$ over `[0, 2π]³`.
+- Manufactured solution `cos(x) sin(2y) sin(3z)` integrates to 0.
+- Pairwise and Kahan agree within `1e-13` relative on a non-trivial-scale
+  integrand.
+- Bit-equality across repeated invocations (placeholder for the
+  `OMP_NUM_THREADS`-varying test that lands in Phase 20).
+
+### Documentation
+
+- New User Guide note `docs/user-guide/notes/phase-3-domain-integration.md`.
+- New Developer Note `docs/developer-note/notes/phase-3-domain-integration.md`,
+  first to use the five-section + external-citation rule introduced in
+  `specs/CLAUDE.md` step 4d (commits `aabfbf6`, `2309ed4`).
+
 ## 0.2.0 — Phase 2: gradient and divergence (scalar)
 
 ### Added
