@@ -2,13 +2,13 @@
 
 Hand-off snapshot. Update this file whenever a phase completes or a major decision changes.
 
-**Last updated:** 2026-05-02 (Phase 3 implementation; PR open, awaiting CI)
+**Last updated:** 2026-05-02 (Phase 3 merged into `main`)
 
 ## Where the project stands
 
 **Phase 3 — Domain integration (∫ over the grid) is done.** Version bumped to `0.3.0`. The library now exposes `gridcalc::func::integrate(const Field<double>&, Tag = {}) -> double`, the discrete periodic-midpoint integral $I_h = h_x h_y h_z \sum_{ijk} f_{ijk}$, with two reduction strategies dispatched on empty tag structs: `gridcalc::func::Pairwise` (default; rounding error $O(\varepsilon \log n)$, 64-element base case) and `gridcalc::func::Kahan` (Neumaier-style compensated, single-pass, error independent of $n$). Phase 3 ships single-threaded — the cross-thread-count determinism contract is trivially satisfied with one thread, and Phase 20 will replace the placeholder `DeterministicAcrossInvocations` test with an `OMP_NUM_THREADS`-varying version. New public namespace `gridcalc::func` and directory `include/gridcalc/func/`. All five new tests pass: unit-field-equals-domain-volume on an anisotropic non-cubic grid; `∫ sin(kx) dV = 0` over `[0, 2π]³`; manufactured-solution `cos(x)·sin(2y)·sin(3z)` integrates to 0; pairwise and Kahan agree within `1e-13` relative; bit-equality across repeated invocations.
 
-**Phase 3 PR:** open as of 2026-05-02 — *Phase 3 — Domain integration*. (PR number assigned at push time; STATUS will be refreshed post-merge.)
+**Phase 3 PR:** **#4** — *Phase 3 — Domain integration (∫ over the grid)* — merged into `main` on 2026-05-02 (rebase merge, commit `b1c136d`). CI was green on Ubuntu GCC and Ubuntu Clang.
 
 **Previously (Phase 2):** PR #3 merged into `main` on 2026-05-02 (rebase merge, commit `ee93091`). `gradient(Field<double>) -> Field<Vec3d>`, `divergence(Field<Vec3d>) -> Field<double>`, `stencil::FirstDerivative<2>`, `core/EigenAliases.hpp`. Convergence-order tests on trig inputs pass; round-trip `divergence(gradient(ψ))` converges at order 2 to the analytical Laplacian.
 
@@ -16,7 +16,7 @@ Hand-off snapshot. Update this file whenever a phase completes or a major decisi
 
 **Previously (Phase 0):** PR #1 merged into `main` on 2026-05-01 with the buildable empty skeleton — CMake 3.20+ project, Eigen 3.4.0 + GoogleTest v1.14.0 pinned in `cmake/Dependencies.cmake`, repo layout per `tech-stack.md`, `.clang-format` / `.clang-tidy` / `CMakePresets.json`, GitHub Actions CI on Ubuntu (GCC + Clang), and the proprietary LICENSE.
 
-**Repository:** [github.com/byounghak/grid-calculus](https://github.com/byounghak/grid-calculus) — **private**, SSH remote `git@github.com:byounghak/grid-calculus.git`. Merged PRs to date: **#1** (Phase 0 — project scaffold), **#2** (Phase 1 — periodic 3D scalar grid + Laplacian), **#3** (Phase 2 — gradient and divergence). Phase 3 PR opens 2026-05-02. Current version `0.3.0`. CI: Ubuntu GCC + Ubuntu Clang on every PR (Phase 21 widens to Apple Clang + MSVC).
+**Repository:** [github.com/byounghak/grid-calculus](https://github.com/byounghak/grid-calculus) — **private**, SSH remote `git@github.com:byounghak/grid-calculus.git`. Merged PRs to date: **#1** (Phase 0 — project scaffold), **#2** (Phase 1 — periodic 3D scalar grid + Laplacian), **#3** (Phase 2 — gradient and divergence), **#4** (Phase 3 — domain integration). Current version `0.3.0`. CI: Ubuntu GCC + Ubuntu Clang on every PR (Phase 21 widens to Apple Clang + MSVC).
 
 **License:** Proprietary, all rights reserved (`LICENSE` is the short notice agreed in the Phase 0 spec round). No open-source license; redistribution requires authorization. Mission target unchanged: production / industrial use, distributed to authorized recipients only.
 
