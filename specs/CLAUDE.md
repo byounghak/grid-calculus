@@ -107,7 +107,7 @@ Format:
 
 - [ ] Every new public symbol carries a Doxygen block including `\brief`, `\param`, `\returns`, `\since`.
 - [ ] User Guide note added at `docs/user-guide/notes/phase-N-<slug>.md` covering user-facing API additions, with a worked example. Required from Phase 3 onward (placeholder markdown until Phase 10 absorbs it into the LaTeX User Guide).
-- [ ] Developer Note added at `docs/developer-note/notes/phase-N-<slug>.md` covering the design decisions taken in `requirements.md` plus any internal-only notes, math derivations, or correctness arguments. Same placeholder convention as the User Guide note.
+- [ ] Developer Note added at `docs/developer-note/notes/phase-N-<slug>.md` with the five-section structure described in step 4d (Theory · Math derivation · Algorithm · Design decisions · References). The References section is non-empty: at least one external citation per note (DOI link or full bibliographic entry for a paper, author / title / edition / section for a textbook, or a permanent URL — no temporary links).
 - [ ] `CHANGELOG.md` entry under the next minor version.
 
 ## Performance (if applicable)
@@ -123,13 +123,22 @@ The PR does not merge with any unticked items.
 In addition to the three feature spec files in `specs/<phase>/`, every phase from Phase 3 onward adds a paired markdown note in the same PR as the implementation:
 
 - `docs/user-guide/notes/phase-N-<slug>.md` — user-facing summary of the phase: what new public API was added, how to call it, what the inputs/outputs look like, with a short worked example. Audience is the production user driving the library.
-- `docs/developer-note/notes/phase-N-<slug>.md` — implementation/design summary: the decisions taken in `requirements.md` distilled for an engineer reading the codebase later, plus any internal-only notes, math derivations, or correctness arguments.
+- `docs/developer-note/notes/phase-N-<slug>.md` — engineering reference for an engineer reading the codebase later. Use the following five sections; depth scales with the phase's mathematical content but every section must be addressed (or explicitly marked "N/A" with a one-line reason):
+  1. **Theory.** The mathematical objects and identities the code rests on (continuous PDE, function space, conservation law, lattice symmetry, etc.) — at the level a reader needs to recognize what is being approximated.
+  2. **Math derivation.** The explicit derivation of the discrete formulas the code uses: Taylor-expansion / moment-matching for stencil weights, truncation-error analysis, eigenvalue spectra for trig manufactured solutions, stability arguments, and the resulting convergence order. Use display math (`$$ … $$`) freely; the markdown will later be inlined into the LaTeX Developer Note where the math renders natively.
+  3. **Algorithm.** The procedure the code actually executes, with file-path references to the relevant headers (`include/gridcalc/...`) and tests (`test/...`). Note algorithmic complexity, data-layout decisions, and any non-trivial control-flow.
+  4. **Design decisions.** The non-obvious decisions taken in `requirements.md` distilled for posterity (one short paragraph per decision), including trade-offs considered and rejected. Cite `requirements.md` rather than copying it.
+  5. **References.** Every theorem, formula, or algorithmic choice referenced above gets an inline citation that resolves in this section. Acceptable citation forms:
+     - **Journal / preprint paper**: full bibliographic entry plus a permanent identifier — DOI URL (`https://doi.org/...`) preferred, arXiv ID acceptable for preprints. Example: `LeVeque, R. J. (2007). Finite Difference Methods for Ordinary and Partial Differential Equations. SIAM. https://doi.org/10.1137/1.9780898717839`.
+     - **Textbook**: author, title, edition, publisher, year, plus the specific chapter/section/page being cited.
+     - **Permanent URL**: a stable web reference (project documentation, official spec). No temporary links, social-media posts, or paywalled-without-DOI sources.
+     At least one external reference per note. Cross-references to other Developer Note phases or to the project's `specs/` files do not count toward the "at least one external" minimum.
 
 The `<slug>` matches the phase's branch / spec-directory slug (e.g., `phase-2-gradient-divergence` → `phase-2-gradient-divergence.md`).
 
 These markdown notes are the **placeholder** form. Phase 10 stands up the LaTeX skeletons for the User Guide (`memoir`) and the Developer Note (`book`), at which point the markdown notes are absorbed into the corresponding `.tex` chapters and the `notes/` directories are emptied. Until Phase 10 lands, markdown is the canonical narrative-doc format and the LaTeX toolchain is not yet built.
 
-The two `notes/` directories carry their own `README.md` describing what does and does not belong in each. `validation.md` (4c) enforces the presence of both notes.
+The two `notes/` directories carry their own `README.md` describing what does and does not belong in each, plus a worked-example skeleton showing the five-section structure. `validation.md` (4c) enforces the presence of both notes and the non-empty References section.
 
 ## 5. Reference, don't duplicate
 
