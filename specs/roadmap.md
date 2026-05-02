@@ -127,7 +127,8 @@ The ordering is deliberate: we drive a thin slice (scalar field, periodic, basic
 - **Deliverables.**
   - `docs/Doxyfile` configured for the public headers; Graphviz `dot` enabled for class / include / call graphs.
   - LaTeX skeletons for the **Developer Note** (`book` class; `\input{}`s Doxygen-generated subfiles for the API reference and Graphviz diagrams) and the **User Guide** (`memoir` class; fully hand-authored). Both built with `latexmk -pdf`.
-  - A "Hello grid" tutorial chapter in the User Guide covering the operators delivered through Phase 9 (scalar periodic FD, integration, callable functional, explicit/RK4 diffusion, higher-order accuracy, biharmonic + mixed partials, FFT verification).
+  - **Absorb the markdown placeholder notes** under `docs/user-guide/notes/` and `docs/developer-note/notes/` (accumulated from Phase 3 onward, one pair per phase) into the corresponding `.tex` chapters. The two `notes/` directories are emptied at the end of this phase; from Phase 11 onward, doc deliverables go straight to the LaTeX sources.
+  - A "Hello grid" tutorial chapter in the User Guide covering the operators delivered through Phase 9 (scalar periodic FD, integration, callable functional, explicit/RK4 diffusion, higher-order accuracy, biharmonic + mixed partials, FFT verification). This chapter assembles content largely from the absorbed markdown notes.
   - `docs/README.md` documenting the local build commands for each artifact.
   - CI job: installs `texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended texlive-pictures latexmk doxygen graphviz`; produces three artifacts on every PR — Doxygen output, Developer Note PDF, User Guide PDF. PDFs are not committed.
   - **`\since` policy enforcement.** A CI lint scans the public headers and fails the build if any public class, function, member variable, or type alias is missing a `\since` tag. All symbols delivered through Phase 9 carry tags before this phase merges.

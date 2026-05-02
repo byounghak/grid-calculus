@@ -106,7 +106,8 @@ Format:
 ## Documentation
 
 - [ ] Every new public symbol carries a Doxygen block including `\brief`, `\param`, `\returns`, `\since`.
-- [ ] Narrative tutorial section added under `docs/` (if the feature is user-visible).
+- [ ] User Guide note added at `docs/user-guide/notes/phase-N-<slug>.md` covering user-facing API additions, with a worked example. Required from Phase 3 onward (placeholder markdown until Phase 10 absorbs it into the LaTeX User Guide).
+- [ ] Developer Note added at `docs/developer-note/notes/phase-N-<slug>.md` covering the design decisions taken in `requirements.md` plus any internal-only notes, math derivations, or correctness arguments. Same placeholder convention as the User Guide note.
 - [ ] `CHANGELOG.md` entry under the next minor version.
 
 ## Performance (if applicable)
@@ -116,6 +117,19 @@ Format:
 ```
 
 The PR does not merge with any unticked items.
+
+### 4d. Doc-notes for User Guide and Developer Note (Phase 3 onward)
+
+In addition to the three feature spec files in `specs/<phase>/`, every phase from Phase 3 onward adds a paired markdown note in the same PR as the implementation:
+
+- `docs/user-guide/notes/phase-N-<slug>.md` — user-facing summary of the phase: what new public API was added, how to call it, what the inputs/outputs look like, with a short worked example. Audience is the production user driving the library.
+- `docs/developer-note/notes/phase-N-<slug>.md` — implementation/design summary: the decisions taken in `requirements.md` distilled for an engineer reading the codebase later, plus any internal-only notes, math derivations, or correctness arguments.
+
+The `<slug>` matches the phase's branch / spec-directory slug (e.g., `phase-2-gradient-divergence` → `phase-2-gradient-divergence.md`).
+
+These markdown notes are the **placeholder** form. Phase 10 stands up the LaTeX skeletons for the User Guide (`memoir`) and the Developer Note (`book`), at which point the markdown notes are absorbed into the corresponding `.tex` chapters and the `notes/` directories are emptied. Until Phase 10 lands, markdown is the canonical narrative-doc format and the LaTeX toolchain is not yet built.
+
+The two `notes/` directories carry their own `README.md` describing what does and does not belong in each. `validation.md` (4c) enforces the presence of both notes.
 
 ## 5. Reference, don't duplicate
 
