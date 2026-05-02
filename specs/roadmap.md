@@ -124,6 +124,7 @@ The ordering is deliberate: we drive a thin slice (scalar field, periodic, basic
 ## Phase 10 — Documentation infrastructure
 
 - **Goal.** Stand up the full documentation toolchain so every later phase can land its own incremental docs (API reference, User Guide chapters, Developer Note sections) into a working build. This phase is plumbing — each subsequent feature phase remains responsible for the doc deliverables it already lists (Cahn–Hilliard tutorial in Phase 12, diamond-lattice example in Phase 16, etc.); they fold in here rather than waiting for the v1.0 polish at Phase 22.
+- **Replaces the lightweight pandoc-based render.** A `pandoc + pdflatex` render (`scripts/render-docs.sh` + the CI `render-docs` job, introduced post-Phase-4) currently produces interim aggregate PDFs from the markdown notes. Phase 10 retires that script and CI job in favor of the full LaTeX skeleton below.
 - **Deliverables.**
   - `docs/Doxyfile` configured for the public headers; Graphviz `dot` enabled for class / include / call graphs.
   - LaTeX skeletons for the **Developer Note** (`book` class; `\input{}`s Doxygen-generated subfiles for the API reference and Graphviz diagrams) and the **User Guide** (`memoir` class; fully hand-authored). Both built with `latexmk -pdf`.

@@ -140,6 +140,8 @@ These markdown notes are the **placeholder** form. Phase 10 stands up the LaTeX 
 
 The two `notes/` directories carry their own `README.md` describing what does and does not belong in each, plus a worked-example skeleton showing the five-section structure. `validation.md` (4c) enforces the presence of both notes and the non-empty References section.
 
+The CI workflow's `render-docs` job runs `scripts/render-docs.sh` (pandoc + pdflatex) on every PR and uploads aggregate PDFs — `user-guide.pdf` and `developer-note.pdf` — as build artifacts on the run page. The PDFs are not committed; the markdown notes are the source of truth. This is the lightweight pre-Phase-10 render described in `specs/tech-stack.md`; you do not need to do anything special to produce the PDFs locally — `./scripts/render-docs.sh` does it from the repository root, given a working `pandoc` and `pdflatex`.
+
 ## 5. Reference, don't duplicate
 
 The three project-wide spec files are the authoritative source of truth:
