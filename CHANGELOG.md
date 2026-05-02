@@ -4,6 +4,43 @@ All notable changes to gridcalc are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## 0.4.0 — Phase 4: functional evaluation, callable API (scalar, periodic)
+
+### Added
+
+- `gridcalc::func::evaluate(const Field<double>&, F&&, Tag = {}) -> double`
+  — discrete functional $F[\psi] = \int f(\psi, \nabla\psi, \nabla^2\psi)\, dV$.
+  The callable `f` is auto-detected at compile time as one of three
+  arities:
+  - `f(double psi)` — only `ψ`; the gradient and Laplacian are skipped.
+  - `f(double psi, const Vec3d& grad)` — `ψ` and `∇ψ`; the Laplacian is
+    skipped.
+  - `f(double psi, const Vec3d& grad, double lap)` — full triplet.
+
+  The reduction tag (`Pairwise` or `Kahan`) is forwarded to
+  `func::integrate`. Implementation is eager: required derivatives are
+  materialized via `diff::gradient` / `diff::laplacian` and a
+  per-grid-point integrand `Field<double>` is reduced.
+
+### Tests
+
+- Ginzburg–Landau hand-computed reference at `N = 64` matches
+  $F = (507/64)\pi^3 \approx 245.62$ within `1e-2` relative.
+- 2nd-order convergence sweep on the GL functional over `N ∈ {16, 32, 64}`.
+- Per-arity dispatch tests: `f(ψ) = ψ²`, `f(ψ, ∇ψ) = (1/2)|∇ψ|²`,
+  `f(ψ, _, ∇²ψ) = ψ ∇²ψ`, all matching their analytical values.
+- Pairwise and Kahan reducers agree on the GL setup within `1e-13` relative.
+
+### Documentation
+
+- New User Guide note `docs/user-guide/notes/phase-4-functional-evaluation.md`
+  walking through the Ginzburg–Landau worked example end-to-end (the
+  "tutorial doc page" deliverable from `roadmap.md` Phase 4).
+- New Developer Note `docs/developer-note/notes/phase-4-functional-evaluation.md`
+  with the five-section structure: theory of functional convergence,
+  full closed-form derivation of the GL reference value, arity-dispatch
+  algorithm, design decisions, and five external references.
+
 ## 0.3.0 — Phase 3: domain integration (∫ over the grid)
 
 ### Added
