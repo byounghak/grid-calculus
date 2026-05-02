@@ -126,3 +126,7 @@ The three project-wide spec files are the authoritative source of truth:
 - [roadmap.md](roadmap.md) — phase sequence with Goal / Deliverables / Acceptance.
 
 Feature specs cite these documents, they do not repeat them. If a feature requires a change to one of the global specs, edit that spec in the same branch and call out the change in `requirements.md` under "Decisions made for this feature."
+
+## 6. After opening the PR — watch CI
+
+Once the PR is open, watch the CI run on it (e.g. `gh pr checks <num> --watch`) until every blocking job reports a result. Do not declare the phase complete or recommend a merge until every blocking job for the current acceptance bar is green. If a job fails, investigate and fix on the same branch — do not bypass with `--no-verify`, `--admin` merges, or by relaxing the acceptance bar without an explicit `requirements.md` revision.
