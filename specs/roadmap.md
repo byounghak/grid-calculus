@@ -91,12 +91,17 @@ The ordering is deliberate: we drive a thin slice (scalar field, periodic, basic
 
 ## Phase 8 — Higher-order spatial derivatives (3rd, 4th)
 
-- **Goal.** Mixed partials and the biharmonic operator.
+- **Goal.** Every unique scalar partial derivative on the periodic Cartesian grid up to total rank 4, plus the biharmonic operator.
 - **Deliverables.**
-  - `diff/MixedPartial.hpp` — $\partial^2/\partial x_i\partial x_j$.
-  - `diff/Biharmonic.hpp` — $\nabla^4$.
-  - 4th-order accuracy variants of both.
-- **Acceptance.** Convergence tests pass; biharmonic of $\sin(\mathbf{k}\cdot\mathbf{x})$ recovers $|\mathbf{k}|^4$.
+  - `stencil/ThirdDerivative.hpp` and `stencil/FourthDerivative.hpp` — central-difference weight tables for $\partial^3/\partial x^3$ and $\partial^4/\partial x^4$ at orders 2 and 4 (sibling templates to Phase 1's `Coefficients<Order>` and Phase 2's `FirstDerivative<Order>`).
+  - `diff/detail/MultiIndexDerivative.hpp` — internal tensor-product helper `mixedDerivative<Nx, Ny, Nz, Order>`; computes the multi-axis partial in a single fused pass via the outer product of three 1D weight tables.
+  - `diff/MixedPartial.hpp` — rank-2 partials `dxx, dyy, dzz, dxy, dxz, dyz` (6 functions).
+  - `diff/ThirdOrder.hpp` — rank-3 partials: `d3dx3, d3dy3, d3dz3, d3dx2dy, d3dxdy2, d3dx2dz, d3dxdz2, d3dy2dz, d3dydz2, d3dxdydz` (10 functions).
+  - `diff/FourthOrder.hpp` — rank-4 partials: `d4dx4, d4dy4, d4dz4, d4dx3dy, d4dxdy3, d4dx3dz, d4dxdz3, d4dy3dz, d4dydz3, d4dx2dy2, d4dx2dz2, d4dy2dz2, d4dx2dydz, d4dxdy2dz, d4dxdydz2` (15 functions).
+  - `diff/Biharmonic.hpp` — `biharmonic<Order>(psi)` = $\nabla^4 \psi$ as a fused six-term direct stencil; alias `d4<Order>(psi)` completes the d-prefix family at the contracted-rank level.
+  - All operators templated on `<int Order = 2>` with `Order = 4` specializations (mirrors Phase 7).
+- **Acceptance.** Convergence tests pass for every (operator, Order) pair (log-log slope on $N \in \{16, 32, 64\}$ in $[\text{Order} - 0.5, \text{Order} + 0.5]$); biharmonic of $\sin(\mathbf{k}\cdot\mathbf{x})$ recovers $|\mathbf{k}|^4$ at both orders.
+- **Naming convention (decided in the Phase 8 spec round).** `d<rank>d<axis-with-exponent>...`, lexicographic axis order (x → y → z), exponent `1` omitted. Templated on `<int Order = 2>`. Examples: `d3dx2dy<Order>(psi)` is $\partial^3/\partial x^2 \partial y$; `d4dx2dy2<Order>(psi)` is $\partial^4/\partial x^2 \partial y^2$.
 
 ## Phase 9 — Spectral verification harness
 
