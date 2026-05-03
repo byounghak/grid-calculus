@@ -18,18 +18,27 @@
 namespace gridcalc::diff {
 
 /// \brief Returns $\nabla \cdot \mathbf{V}$ as a fresh, same-shape
-///        `Field<double>`.
+///        `Field<double>`, using a central-difference stencil of
+///        accuracy `Order`.
 ///
-/// 2nd-order central differences:
-/// $\partial V_x / \partial x + \partial V_y / \partial y + \partial V_z / \partial z$,
-/// each component differentiated along its own axis. Wrapping at the domain
-/// boundary is the responsibility of the input `Field`'s `Policy` (default
-/// `IndexPolicy::Periodic`); `divergence` itself makes no boundary decisions.
+/// Computes $\partial V_x / \partial x + \partial V_y / \partial y + \partial V_z / \partial z$,
+/// with each component differentiated along its own axis using the same
+/// `stencil::FirstDerivative<Order>` weight table, scaled by the per-axis
+/// $1/h_a$. Wrapping at the domain boundary is the responsibility of the
+/// input `Field`'s `Policy` (default `IndexPolicy::Periodic`); `divergence`
+/// itself makes no boundary decisions.
+///
+/// `Order` defaults to `2` so callers from Phase 2 onward
+/// (`divergence(vfield)`) keep working unchanged. Set explicitly for
+/// higher accuracy: `divergence<4>(vfield)` (Phase 7).
+/// \tparam Order  Accuracy order of the central-difference stencil. `2`
+///                (Phase 2) and `4` (Phase 7) are specialized.
 /// \param vfield  Input vector field, components stored as `Vec3d` per grid point.
 /// \returns A new `Field<double>` holding $\nabla \cdot \mathbf{V}$ at every grid point.
-/// \since 0.2.0
+/// \since 0.2.0 (function); 0.7.0 (`Order` parameter).
+template <int Order = 2>
 inline core::Field<double> divergence(const core::Field<core::Vec3d>& vfield) {
-  using Coeffs = stencil::FirstDerivative<2>;
+  using Coeffs = stencil::FirstDerivative<Order>;
   const auto& grid = vfield.getGrid();
   const auto& h = grid.getCellSize();
   const double inv_hx = 1.0 / h(0);
