@@ -20,6 +20,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(GRIDCALC_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 option(GRIDCALC_BUILD_TESTS "Build the gridcalc test suite" ON)
+option(GRIDCALC_USE_FFT "Build the verification-only spectral harness (vendored PocketFFT)" ON)
 
 add_library(gridcalc_warnings INTERFACE)
 if(MSVC)
@@ -56,6 +57,18 @@ target_compile_features(gridcalc INTERFACE cxx_std_17)
 # suppressed while our own code still gets the full set of warnings.
 get_target_property(_eigen_includes Eigen3::Eigen INTERFACE_INCLUDE_DIRECTORIES)
 target_include_directories(gridcalc SYSTEM INTERFACE ${_eigen_includes})
+
+# PocketFFT (vendored, header-only) — verification-only spectral harness
+# under gridcalc::spectral. See specs/roadmap.md Phase 9 and
+# extern/pocketfft/VERSION for upstream / revision metadata.
+# Propagated as a SYSTEM include so PocketFFT's own warnings (it does not
+# compile clean under -Wconversion) do not fire on our code.
+if(GRIDCALC_USE_FFT)
+    target_include_directories(gridcalc SYSTEM INTERFACE
+        "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/extern/pocketfft>"
+    )
+    target_compile_definitions(gridcalc INTERFACE GRIDCALC_USE_FFT)
+endif()
 
 if(GRIDCALC_BUILD_TESTS)
     enable_testing()

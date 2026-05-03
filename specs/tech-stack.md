@@ -18,7 +18,7 @@ This document pins the technology choices for the library. Changes require a wri
   - Fixed-size small types: `Eigen::Vector3d`, `Eigen::Matrix3d`.
   - Rank-3 and rank-4 small tensors via `Eigen::TensorFixedSize` (from `unsupported/Eigen/CXX11/Tensor`) or a thin in-house wrapper if the unsupported module proves unstable.
   - Sparse matrices and direct/iterative solvers (`SparseLU`, `BiCGSTAB`, `ConjugateGradient`) for implicit time integration on non-periodic grids in later phases.
-- **[PocketFFT](https://gitlab.mpcdf.mpg.de/mtr/pocketfft)** for FFT-based spectral reference derivatives on periodic grids. Header-only, MIT-licensed, no transitive system dependencies. The spectral path is **not** the production differentiation engine — it exists as an independent reference against which the periodic finite-difference operators are cross-checked in CI (see `specs/roadmap.md`, Phase 9). Available behind `gridcalc::spectral::*`. Gated by `-DGRIDCALC_USE_FFT=ON/OFF` (default `ON`); turning it off disables the spectral verification tests but does not affect the rest of the library.
+- **[PocketFFT](https://gitlab.mpcdf.mpg.de/mtr/pocketfft)** for FFT-based spectral reference derivatives on periodic grids. Header-only, BSD-3-Clause-licensed, no transitive system dependencies. **Vendored** under `extern/pocketfft/pocketfft_hdronly.h` rather than `FetchContent`-fetched (decided in the Phase 9 spec round): the project's mission target is "production / industrial," for which build determinism without network access is valuable. The vendored revision is recorded in `extern/pocketfft/VERSION.txt`. The spectral path is **not** the production differentiation engine — it exists as an independent reference against which the periodic finite-difference operators are cross-checked in CI (see `specs/roadmap.md`, Phase 9). Available behind `gridcalc::spectral::*`. Gated by `-DGRIDCALC_USE_FFT=ON/OFF` (default `ON`); turning it off disables the spectral verification tests but does not affect the rest of the library.
 
 ## Parallelism
 
@@ -78,7 +78,7 @@ This document pins the technology choices for the library. Changes require a wri
   - Eigen (tag `3.4.0` or later patch)
   - GoogleTest (tag `v1.14.0` or later)
   - Google Benchmark (tag `v1.8.x`)
-  - PocketFFT (pinned commit on the `cpp` branch)
+  - PocketFFT — **vendored** under `extern/pocketfft/`, not `FetchContent`. Revision recorded in `extern/pocketfft/VERSION.txt`. Decided in the Phase 9 spec round (build determinism without network access).
 - A `cmake/Dependencies.cmake` file is the single source of truth for versions.
 
 ## Repository layout
