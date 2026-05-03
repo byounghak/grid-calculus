@@ -14,7 +14,7 @@
 - [ ] **Spectral basic / FFT round-trip.** `forwardR2C` followed by `backwardC2R` on $\sin(x)\sin(y)\sin(z)$ recovers the input within $5\times10^{-13}$ max-norm at $N = 32$.
 - [ ] **Named wrappers smoke tests.**
   - `spectral::laplacian` on $\sin(\mathbf{k}\cdot\mathbf{x})$ for $\mathbf{k} = (1, 1, 1)$ recovers $-|\mathbf{k}|^2 \psi = -3 \psi$ within $5\times10^{-12}$ at $N = 32$.
-  - `spectral::biharmonic` recovers $|\mathbf{k}|^4 \psi = 9 \psi$ within $5\times10^{-12}$.
+  - `spectral::biharmonic` recovers $|\mathbf{k}|^4 \psi = 9 \psi$ within $5\times10^{-11}$ (looser than the laplacian bound because $|\mathbf{k}|^4 = 9$ amplifies round-off vs $|\mathbf{k}|^2 = 3$).
   - `spectral::gradient` recovers $\mathbf{k} \cos(\mathbf{k}\cdot\mathbf{x}) = (1, 1, 1) \cos(x+y+z)$ within $5\times10^{-12}$ component-wise.
 - [ ] **FD–FFT cross-check fixture (the permanent CI gate).** For every (FD operator, Order) pair listed below, the log-log slope of the FD–FFT discrepancy on $\psi = \sin(x + y + z)$ over $N \in \{16, 32, 64, 128\}$ lies in `[Order − 0.5, Order + 0.5]`.
   - Phase 1 (2 cases): `diff::laplacian<{2, 4}>`.
