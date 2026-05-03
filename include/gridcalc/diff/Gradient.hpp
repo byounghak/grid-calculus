@@ -17,19 +17,28 @@
 
 namespace gridcalc::diff {
 
-/// \brief Returns $\nabla f$ as a fresh, same-shape `Field<Vec3d>`.
+/// \brief Returns $\nabla f$ as a fresh, same-shape `Field<Vec3d>`,
+///        using a central-difference stencil of accuracy `Order`.
 ///
-/// 2nd-order central differences, applied independently along x, y, and z.
 /// At each grid point the result holds the Cartesian triple
 /// $(\partial f / \partial x,\ \partial f / \partial y,\ \partial f / \partial z)$.
-/// Wrapping at the domain boundary is the responsibility of the input
-/// `Field`'s `Policy` (default `IndexPolicy::Periodic`); `gradient` itself
-/// makes no boundary decisions.
+/// Each component uses the same `stencil::FirstDerivative<Order>` weight
+/// table along its own axis, scaled by the per-axis $1/h_a$. Wrapping at
+/// the domain boundary is the responsibility of the input `Field`'s
+/// `Policy` (default `IndexPolicy::Periodic`); `gradient` itself makes
+/// no boundary decisions.
+///
+/// `Order` defaults to `2` so callers from Phase 2 onward
+/// (`gradient(field)`) keep working unchanged. Set explicitly for higher
+/// accuracy: `gradient<4>(field)` (Phase 7).
+/// \tparam Order  Accuracy order of the central-difference stencil. `2`
+///                (Phase 2) and `4` (Phase 7) are specialized.
 /// \param field  Input scalar field.
 /// \returns A new `Field<Vec3d>` holding $\nabla f$ at every grid point.
-/// \since 0.2.0
+/// \since 0.2.0 (function); 0.7.0 (`Order` parameter).
+template <int Order = 2>
 inline core::Field<core::Vec3d> gradient(const core::Field<double>& field) {
-  using Coeffs = stencil::FirstDerivative<2>;
+  using Coeffs = stencil::FirstDerivative<Order>;
   const auto& grid = field.getGrid();
   const auto& h = grid.getCellSize();
   const double inv_hx = 1.0 / h(0);
