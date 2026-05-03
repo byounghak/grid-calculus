@@ -2,7 +2,7 @@
 
 ## Group 1 — Vendor PocketFFT and wire into the build
 
-- Create `extern/pocketfft/` and commit `pocketfft_hdronly.h` from upstream `mreineck/pocketfft` at a specific revision. Add `extern/pocketfft/VERSION` recording the upstream URL, revision SHA, and the date the vendor snapshot was taken.
+- Create `extern/pocketfft/` and commit `pocketfft_hdronly.h` from upstream `mreineck/pocketfft` at a specific revision. Add `extern/pocketfft/VERSION.txt` recording the upstream URL, revision SHA, and the date the vendor snapshot was taken.
 - Add a CMake option `option(GRIDCALC_USE_FFT "Build the spectral verification harness (PocketFFT-backed)" ON)`.
 - When `GRIDCALC_USE_FFT` is on:
   - `target_include_directories(gridcalc INTERFACE $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/extern/pocketfft> ...)`.

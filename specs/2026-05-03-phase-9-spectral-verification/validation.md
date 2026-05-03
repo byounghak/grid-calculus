@@ -7,7 +7,7 @@
 - [ ] Warnings clean under `-Wall -Wextra -Wpedantic -Wconversion`. PocketFFT's vendored header is included with the `SYSTEM` modifier so its warnings do not fire on our code.
 - [ ] `clang-format` and `clang-tidy` pass on the new project files. PocketFFT's vendored header is excluded from clang-tidy via `.clang-tidy` `HeaderFilterRegex`.
 - [ ] `gridcalc` target remains INTERFACE — no new source files.
-- [ ] `extern/pocketfft/VERSION` records the upstream revision SHA + URL + snapshot date.
+- [ ] `extern/pocketfft/VERSION.txt` records the upstream revision SHA + URL + snapshot date.
 
 ## Tests
 

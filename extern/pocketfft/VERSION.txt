@@ -1,0 +1,16 @@
+PocketFFT (C++ header-only)
+
+Upstream:    https://gitlab.mpcdf.mpg.de/mtr/pocketfft (branch `cpp`)
+Revision:    32424d2067c2e8043dc646a4e49754b2b40cc549
+Snapshot:    2026-05-03
+License:     BSD 3-Clause (see header of pocketfft_hdronly.h)
+Authors:     Martin Reinecke, Peter Bell, et al.
+Used as:     Verification-only spectral derivative engine for the
+             gridcalc::spectral namespace. The FD operators in
+             gridcalc::diff remain the production differentiation
+             code (per specs/mission.md and specs/roadmap.md Phase 9).
+
+Bump:        Replace pocketfft_hdronly.h from upstream and update the
+             Revision and Snapshot fields above. CI's FD-FFT cross-check
+             fixture (test/fd_fft_crosscheck_test.cpp) is the primary
+             gate that catches behavior changes after a bump.
