@@ -2,13 +2,15 @@
 
 Hand-off snapshot. Update this file whenever a phase completes or a major decision changes.
 
-**Last updated:** 2026-05-03 (Phase 6 merged into `main`)
+**Last updated:** 2026-05-03 (Phase 7 implementation; PR open, awaiting CI)
 
 ## Where the project stands
 
-**Phase 6 — RK4 + generic time integrator interface is done.** Version bumped to `0.6.0`. Adds tag-dispatched generic integrator `gridcalc::solve::integrate(psi, rhs, dt, n_steps, IntegratorTag{})` with two tags: `solve::ExplicitEuler` (Phase 5 default; CFL `0.5`) and `solve::RK4` (4-stage classic Runge–Kutta; CFL `0.6963` for the heat equation). Phase 5's `solve::explicitEuler` is preserved as a thin wrapper over `integrate(..., ExplicitEuler{})`. `solve::diffuse` is now templated on the integrator tag (default `ExplicitEuler{}`); the per-tag CFL limit is read from `Integrator::diffusionCFLLimit` so RK4 callers get the larger stability bound automatically. New aggregator header `solve/Integrator.hpp` pulls in both per-integrator headers. All six new tests pass: RK4-matches-analytic at `N=32` (1% relative, 10× tighter than Euler), combined refinement showing slope ~2 for both integrators (spatial-dominated at CFL-limited dt), pure-ODE comparison showing RK4 ≥ 10× more accurate than Euler at the same dt, **pure-ODE dt-sweep showing RK4 log-log slope ~4 (satisfies the roadmap's `error scales as Δt^4` acceptance)**, RK4-stability-gap test, and bit-identical Phase 5 wrapper. All 47 prior tests still pass.
+**Phase 7 — Higher-order accuracy stencils (4th-order) is done.** Version bumped to `0.7.0`. Adds `gridcalc::stencil::Coefficients<4>` (weights `{-1/12, 4/3, -5/2, 4/3, -1/12}`) and `gridcalc::stencil::FirstDerivative<4>` (weights `{1/12, -2/3, 0, 2/3, -1/12}`); both have radius `2` and truncation error `O(h^4)`. Promotes `diff::laplacian`, `diff::gradient`, and `diff::divergence` to function templates on an `Order` parameter (default `2`); all Phase 1–6 callers (`laplacian(field)`, etc.) keep compiling via the C++17 default-template-argument rule. Phase 7 callers write `laplacian<4>(field)` etc. for the new accuracy. Per-axis-independent unitless weights mean anisotropic per-axis spacing (the kind Phase 1's `Grid` supports) needs no special handling. All seven new tests pass: 4th-order convergence sweep on each operator (`slope ∈ [3.5, 4.5]`), order-2-vs-order-4 absolute-accuracy comparison (order 4 ≥ 10× more accurate at `N = 32`), and weight-table verification. All 53 prior tests still pass without modification.
 
-**Phase 6 PR:** **#9** — *Phase 6 — RK4 + generic time integrator interface* — merged into `main` on 2026-05-03 (rebase merge, commit `2ddfbd0`). CI was green on Ubuntu GCC, Ubuntu Clang, and the `Render Doc PDFs` job.
+**Phase 7 PR:** open as of 2026-05-03 — *Phase 7 — Higher-order accuracy stencils*. (PR number assigned at push time; STATUS will be refreshed post-merge.)
+
+**Previously (Phase 6):** PR #9 merged into `main` on 2026-05-03 (rebase merge, commit `2ddfbd0`). Tag-dispatched `solve::integrate(psi, rhs, dt, n_steps, ExplicitEuler{}|RK4{})`; classic 4-stage RK4 implementation with heat-equation CFL `0.6963`; templated `solve::diffuse` reads the per-tag CFL limit. Phase 5's `solve::explicitEuler` preserved as a thin wrapper.
 
 **Previously (Phase 5):** PR #7 merged into `main` on 2026-05-02 (rebase merge, commit `54e8c82`). `solve::explicitEuler` (now a thin wrapper) and `solve::diffuse` with the von-Neumann CFL check.
 
@@ -22,7 +24,7 @@ Hand-off snapshot. Update this file whenever a phase completes or a major decisi
 
 **Previously (Phase 0):** PR #1 merged into `main` on 2026-05-01 with the buildable empty skeleton — CMake 3.20+ project, Eigen 3.4.0 + GoogleTest v1.14.0 pinned in `cmake/Dependencies.cmake`, repo layout per `tech-stack.md`, `.clang-format` / `.clang-tidy` / `CMakePresets.json`, GitHub Actions CI on Ubuntu (GCC + Clang), and the proprietary LICENSE.
 
-**Repository:** [github.com/byounghak/grid-calculus](https://github.com/byounghak/grid-calculus) — **private**, SSH remote `git@github.com:byounghak/grid-calculus.git`. Merged PRs to date: **#1** (Phase 0), **#2** (Phase 1), **#3** (Phase 2), **#4** (Phase 3), **#5** (Phase 4), **#6** (PDF render workflow + Phase 1/2 doc-notes backfill), **#7** (Phase 5 — explicit Euler), **#8** (`get-docs.sh` script), **#9** (Phase 6 — RK4 + generic integrator). Current version `0.6.0`. CI: Ubuntu GCC + Ubuntu Clang on every PR plus a `Render Doc PDFs` job that uploads `gridcalc-docs-pdfs` artifacts (Phase 21 widens to Apple Clang + MSVC).
+**Repository:** [github.com/byounghak/grid-calculus](https://github.com/byounghak/grid-calculus) — **private**, SSH remote `git@github.com:byounghak/grid-calculus.git`. Merged PRs to date: **#1** (Phase 0), **#2** (Phase 1), **#3** (Phase 2), **#4** (Phase 3), **#5** (Phase 4), **#6** (PDF render workflow + Phase 1/2 doc-notes backfill), **#7** (Phase 5), **#8** (`get-docs.sh` script), **#9** (Phase 6). Phase 7 PR opens 2026-05-03. Current version `0.7.0`. CI: Ubuntu GCC + Ubuntu Clang on every PR plus a `Render Doc PDFs` job that uploads `gridcalc-docs-pdfs` artifacts (Phase 21 widens to Apple Clang + MSVC).
 
 **License:** Proprietary, all rights reserved (`LICENSE` is the short notice agreed in the Phase 0 spec round). No open-source license; redistribution requires authorization. Mission target unchanged: production / industrial use, distributed to authorized recipients only.
 
@@ -36,14 +38,14 @@ Hand-off snapshot. Update this file whenever a phase completes or a major decisi
 
 ## Next action
 
-**Phase 7 — Higher-order accuracy stencils (4th-order).** Per `CLAUDE.md`, the entry point is:
+**Phase 8 — Higher-order spatial derivatives (3rd, 4th).** Per `CLAUDE.md`, the entry point is:
 
-1. Open branch `YYYY-MM-DD-phase-7-higher-order-stencils` (use today's date when starting).
-2. Use `AskUserQuestion` to pin down API choices: how the existing operators (Laplacian, gradient, divergence) accept an order parameter (compile-time template arg, runtime argument, or new variant operators); how `Coefficients<4>` and `FirstDerivative<4>` are derived (Fornberg algorithm vs hard-coded weights); whether the order-2 stencils stay the default for backward compatibility; how the convergence-order tests differ.
-3. Create `specs/YYYY-MM-DD-phase-7-higher-order-stencils/{plan,requirements,validation}.md`.
-4. Implement: `Coefficients<4>` and `FirstDerivative<4>` specializations; refactor `laplacian`, `gradient`, `divergence` to accept an accuracy-order template parameter (or new overloads); convergence-order tests confirming slope `~4` on trig inputs.
+1. Open branch `YYYY-MM-DD-phase-8-higher-order-derivatives` (use today's date when starting).
+2. Use `AskUserQuestion` to pin down API choices: how to add `\partial^3` and `\partial^4` operators (new function names like `diff::thirdDerivative` / `diff::fourthDerivative` vs a templated `diff::derivative<Rank, Order>`); whether mixed partials (`\partial^2 / \partial x \partial y`, etc.) belong here or in a later phase; whether to introduce a constexpr Fornberg generator now (Phase 7 deferred this; Phase 8 is the natural decision point with multiple new orders/ranks landing).
+3. Create `specs/YYYY-MM-DD-phase-8-higher-order-derivatives/{plan,requirements,validation}.md`.
+4. Implement per the chosen API; convergence-order tests for each new operator.
 
-**Acceptance** (from `roadmap.md` Phase 7): 4th-order convergence demonstrated on Laplacian, gradient, and divergence.
+**Acceptance** (from `roadmap.md` Phase 8): convergence-order tests pass for the new derivatives at the targeted accuracy order.
 
 A scheduled follow-up agent (`trig_01M1NGo52vJhJEjx4NyvoEdf`) will check in on 2026-05-22 to decide whether to file a tracking issue for Phase 21.
 
@@ -58,7 +60,8 @@ A scheduled follow-up agent (`trig_01M1NGo52vJhJEjx4NyvoEdf`) will check in on 2
 | 4      | Functional evaluation, callable API                     | Done        |
 | 5      | Explicit Euler diffusion solver                         | Done        |
 | 6      | RK4 + generic time integrator interface                 | Done        |
-| 7–9    | Remaining periodic FD operators + spectral verification | Not started |
+| 7      | Higher-order accuracy stencils (4th-order)              | Done        |
+| 8–9    | Remaining periodic FD operators + spectral verification | Not started |
 | 10     | Documentation infrastructure                            | Not started |
 | 11–14  | Higher-order functionals, CH demo, vector/tensor fields | Not started |
 | 15–17  | Lattice basis, multi-atom basis, sublattice operators   | Not started |
