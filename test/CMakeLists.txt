@@ -12,6 +12,7 @@ add_executable(gridcalc_tests
     functional_test.cpp
     diffusion_test.cpp
     integrator_test.cpp
+    higher_order_test.cpp
 )
 
 target_link_libraries(gridcalc_tests PRIVATE
