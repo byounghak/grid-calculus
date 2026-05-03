@@ -14,6 +14,7 @@ add_executable(gridcalc_tests
     integrator_test.cpp
     higher_order_test.cpp
     phase_8_test.cpp
+    spectral_basic_test.cpp
 )
 
 target_link_libraries(gridcalc_tests PRIVATE
