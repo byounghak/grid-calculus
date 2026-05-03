@@ -4,6 +4,47 @@ All notable changes to gridcalc are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## 0.7.0 — Phase 7: 4th-order accuracy stencils
+
+### Added
+
+- `gridcalc::stencil::Coefficients<4>` — 4th-order central-difference
+  weights for $\partial^2/\partial x^2$:
+  $\{-1/12, 4/3, -5/2, 4/3, -1/12\}$ (radius 2). Truncation error
+  $O(h^4)$ vs `Coefficients<2>`'s $O(h^2)$.
+- `gridcalc::stencil::FirstDerivative<4>` — 4th-order central-difference
+  weights for $\partial/\partial x$:
+  $\{1/12, -2/3, 0, 2/3, -1/12\}$ (radius 2). Truncation error
+  $O(h^4)$ vs `FirstDerivative<2>`'s $O(h^2)$.
+
+### Changed
+
+- `gridcalc::diff::laplacian`, `gradient`, and `divergence` are now
+  templated on an `Order` parameter, defaulting to `2`. All Phase 1–6
+  callers (which write `laplacian(field)`, etc.) keep compiling
+  unchanged via the C++17 default-template-argument rule. Phase 7
+  callers can write `laplacian<4>(field)`, `gradient<4>(field)`, or
+  `divergence<4>(vfield)` to opt into the 4th-order stencil.
+
+### Tests
+
+- Order-4 convergence sweep on each operator over `N ∈ {16, 32, 64}`:
+  log-log slope in `[3.5, 4.5]`. Satisfies the roadmap's "log-log
+  convergence slopes match advertised orders" acceptance.
+- Order-2-vs-order-4 absolute-accuracy comparison on each operator at
+  `N = 32`: order 4 is at least 10× more accurate than order 2.
+- Weight-table verification for `Coefficients<4>` and
+  `FirstDerivative<4>` (catches typos in the hard-coded values).
+
+### Documentation
+
+- New User Guide note `docs/user-guide/notes/phase-7-higher-order-stencils.md`
+  with the API switch, cost / accuracy table, and a worked example.
+- New Developer Note `docs/developer-note/notes/phase-7-higher-order-stencils.md`
+  with the explicit Taylor / moment-matching derivation of both 4th-order
+  weight tables, the truncation-error analysis, and four external
+  references (Fornberg 1988, LeVeque, NIST DLMF, Trefethen).
+
 ## 0.6.0 — Phase 6: RK4 + generic time integrator interface
 
 ### Added
