@@ -4,6 +4,71 @@ All notable changes to gridcalc are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## 0.9.0 — Phase 9: Spectral verification harness
+
+### Added
+
+- **Vendored PocketFFT** under `extern/pocketfft/pocketfft_hdronly.h`
+  (BSD-3-Clause). Revision recorded in `extern/pocketfft/VERSION.txt`.
+  Vendored rather than `FetchContent`-fetched (decided in the Phase 9
+  spec round): build determinism without network access matters for the
+  project's "production / industrial" target.
+- New CMake option `GRIDCALC_USE_FFT` (default `ON`). When `ON`, the
+  `gridcalc::spectral` namespace is built and the FD–FFT cross-check
+  fixture is included in the test suite. When `OFF`, all spectral
+  headers `#ifdef`-out and the FD code path is unaffected.
+- New namespace `gridcalc::spectral` (header-only):
+  - `spectral::Wavenumbers` — `kxRfft`, `kyFull`, `kzFull` builders for
+    per-axis $k$-space arrays following the `numpy.fft`-style signed
+    convention (rfft half-spectrum on the x-axis).
+  - `spectral::Fft` — `forwardR2C` and `backwardC2R` thin wrappers over
+    PocketFFT's r2c / c2r 3D transforms. Column-major byte strides
+    matching `Field<double>`'s i-fastest layout; `axes = {2, 1, 0}` so
+    the rfft compresses axis 0 (the x-axis).
+  - `spectral::Derivatives`:
+    - `spectral::partial<int Nx, int Ny, int Nz>(field) -> Field<double>`
+      — generic multi-index spectral partial. Multiplies the spectrum
+      by $(ik_x)^{N_x}(ik_y)^{N_y}(ik_z)^{N_z}$ and inverse-transforms;
+      Nyquist mode zeroed on any axis with an odd derivative count.
+    - `spectral::laplacian(field)` — fused $-|\mathbf{k}|^2$ multiplication.
+    - `spectral::biharmonic(field)` — fused $|\mathbf{k}|^4$ multiplication.
+    - `spectral::gradient(field) -> Field<Vec3d>` — one forward + three
+      backward FFTs.
+
+### Tests
+
+- **`SpectralBasicTest`** (5 tests) — FFT round-trip; named-wrapper
+  smoke tests for `laplacian`, `biharmonic`, `gradient` on
+  $\sin(\mathbf{k}\cdot\mathbf{x})$ matching their analytical
+  $-|\mathbf{k}|^2\psi$, $|\mathbf{k}|^4\psi$, $\mathbf{k}\cos(\mathbf{k}\cdot\mathbf{x})$
+  references; Nyquist-zeroing audit on a one-mode-at-Nyquist input.
+- **`FdFftCrossCheck`** (70 tests) — the permanent CI gate. For every
+  Phase 1–8 FD operator at every advertised accuracy order, asserts the
+  log-log slope of the FD–FFT discrepancy on $\psi = \sin(x + y + z)$
+  over $N \in \{16, 32, 64, 128\}$ lies in
+  $[\text{Order} - 0.5, \text{Order} + 0.5]$. Coverage:
+  Phase 1 `laplacian` × 2 orders, Phase 2 `gradient` / `divergence` × 2
+  orders, Phase 8's 31 d-prefix partials × 2 orders + `biharmonic` × 2
+  orders.
+- All Phase 1–8 tests continue to pass without modification (verified
+  with both `GRIDCALC_USE_FFT=ON` and `=OFF`).
+
+### Documentation
+
+- New User Guide note
+  `docs/user-guide/notes/phase-9-spectral-verification.md` covering the
+  hybrid API, verification-only positioning, build flag, and a worked
+  CI-style FD–FFT assertion example.
+- New Developer Note
+  `docs/developer-note/notes/phase-9-spectral-verification.md` with the
+  five-section structure (Theory · Math derivation · Algorithm · Design
+  decisions · References), wavenumber + Nyquist conventions, three
+  external references (Trefethen DOI, Frigo–Johnson DOI, Boyd permanent
+  URL) plus the PocketFFT upstream URL.
+- `specs/tech-stack.md` updated to record PocketFFT as **vendored**
+  rather than `FetchContent`-fetched, with the BSD-3-Clause license note
+  corrected (was "MIT").
+
 ## 0.8.0 — Phase 8: Higher-order spatial derivatives (3rd, 4th)
 
 ### Added
