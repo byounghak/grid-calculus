@@ -2,7 +2,7 @@
 
 Hand-off snapshot. Update this file whenever a phase completes or a major decision changes.
 
-**Last updated:** 2026-05-03 (Phase 7 merged into `main`)
+**Last updated:** 2026-05-03 (Phase 7 merged into `main`; ready for new-session handoff)
 
 ## Where the project stands
 
