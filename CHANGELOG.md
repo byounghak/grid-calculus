@@ -4,6 +4,80 @@ All notable changes to gridcalc are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## 0.8.0 — Phase 8: Higher-order spatial derivatives (3rd, 4th)
+
+### Added
+
+- `gridcalc::stencil::ThirdDerivative<Order>` — central-difference weight
+  table for $\partial^3/\partial x^3$. Order 2: $\{-1/2, 1, 0, -1, 1/2\}$
+  (radius 2, anti-symmetric). Order 4: $\{1/8, -1, 13/8, 0, -13/8, 1, -1/8\}$
+  (radius 3, anti-symmetric).
+- `gridcalc::stencil::FourthDerivative<Order>` — central-difference weight
+  table for $\partial^4/\partial x^4$. Order 2: $\{1, -4, 6, -4, 1\}$
+  (radius 2, symmetric). Order 4:
+  $\{-1/6, 2, -13/2, 28/3, -13/2, 2, -1/6\}$ (radius 3, symmetric).
+- `gridcalc::diff::detail::mixedDerivative<Nx, Ny, Nz, Order>` — internal
+  tensor-product helper that computes the multi-axis partial
+  $\partial^{Nx+Ny+Nz}\psi / \partial x^{Nx}\partial y^{Ny}\partial z^{Nz}$
+  in a single fused pass via the outer product of three 1D weight tables.
+- **31 named partial-derivative functions** across three new headers,
+  each templated on `<int Order = 2>` (orders 2 and 4 specialized):
+  - `gridcalc/diff/MixedPartial.hpp` — rank-2 partials: `dxx`, `dyy`,
+    `dzz`, `dxy`, `dxz`, `dyz` (6 functions). Roadmap deliverable
+    `diff/MixedPartial.hpp` shipped under the d-prefix naming
+    convention.
+  - `gridcalc/diff/ThirdOrder.hpp` — rank-3 partials (10 functions):
+    `d3dx3`, `d3dy3`, `d3dz3`, `d3dx2dy`, `d3dxdy2`, `d3dx2dz`,
+    `d3dxdz2`, `d3dy2dz`, `d3dydz2`, `d3dxdydz`.
+  - `gridcalc/diff/FourthOrder.hpp` — rank-4 partials (15 functions):
+    `d4dx4`, `d4dy4`, `d4dz4`, `d4dx3dy`, `d4dxdy3`, `d4dx3dz`,
+    `d4dxdz3`, `d4dy3dz`, `d4dydz3`, `d4dx2dy2`, `d4dx2dz2`,
+    `d4dy2dz2`, `d4dx2dydz`, `d4dxdy2dz`, `d4dxdydz2`.
+- `gridcalc::diff::biharmonic<Order>(psi)` — $\nabla^4\psi$ on a periodic
+  scalar field, implemented as a fused six-term direct stencil
+  ($\partial_x^4 + \partial_y^4 + \partial_z^4 +
+  2\sum_{a<b}\partial_a^2\partial_b^2$) — not via
+  `laplacian(laplacian(psi))`. Roadmap deliverable
+  `diff/Biharmonic.hpp`.
+- `gridcalc::diff::d4<Order>(psi)` — alias forwarding to `biharmonic`,
+  completing the d-prefix family at the contracted-rank level.
+
+### Tests
+
+- **Weight-table audits**: `EXPECT_DOUBLE_EQ` on every weight in
+  `ThirdDerivative<{2, 4}>` and `FourthDerivative<{2, 4}>` (catches typos
+  in the hard-coded values).
+- **62 convergence sweeps** across all 31 named partials × `Order ∈ {2, 4}`
+  on the trigonometric manufactured solution $\psi = \sin(x)\sin(y)\sin(z)$
+  over the periodic $[0, 2\pi)^3$ box: log-log slope on $N \in \{16, 32, 64\}$
+  in $[\text{Order} - 0.5, \text{Order} + 0.5]$. Satisfies the roadmap's
+  acceptance.
+- **Biharmonic convergence sweeps** (orders 2 and 4) and **four explicit
+  $\nabla^4\psi = |\mathbf{k}|^4\psi$ acceptance tests** at $N = 64$ on
+  $\mathbf{k} = (1, 1, 1)$ and $(1, 2, 1)$ — satisfies the roadmap's
+  "biharmonic of $\sin(\mathbf{k}\cdot\mathbf{x})$ recovers $|\mathbf{k}|^4$"
+  bar.
+- **Alias-parity tests** verifying `d4<Order>(psi) == biharmonic<Order>(psi)`
+  element-wise.
+- All Phase 1–7 tests continue to pass without modification.
+
+### Documentation
+
+- New User Guide note
+  `docs/user-guide/notes/phase-8-higher-order-derivatives.md` covering the
+  full naming convention, the 31 named functions plus `biharmonic` / `d4`,
+  the calling syntax with `Order`, and a worked $\nabla^4$ example with the
+  $|\mathbf{k}|^4$ spectral expectation cross-check.
+- New Developer Note
+  `docs/developer-note/notes/phase-8-higher-order-derivatives.md` with the
+  five-section structure (Theory · Math derivation · Algorithm · Design
+  decisions · References), explicit Taylor-matching derivation of the four
+  new 1D weight tables, the biharmonic six-term decomposition, and three
+  external references (Fornberg 1988 DOI, LeVeque 2007 DOI, NIST DLMF
+  permanent URL).
+- `specs/roadmap.md` Phase 8 entry rewritten to match the expanded scope
+  decided in the spec round.
+
 ## 0.7.0 — Phase 7: 4th-order accuracy stencils
 
 ### Added
