@@ -19,10 +19,10 @@ The ordering is deliberate: we drive a thin slice (scalar field, periodic, basic
   - `CMakeLists.txt`, `cmake/Dependencies.cmake` pinning Eigen + GoogleTest.
   - Repository layout per `tech-stack.md`.
   - One trivial test (`gridcalc::version()` returns a known string).
-  - GitHub Actions CI: Ubuntu GCC + Ubuntu Clang, both green. (Apple Clang and MSVC jobs are deferred to Phase 21 — Cross-platform CI hardening.)
+  - GitHub Actions CI: Ubuntu GCC + Ubuntu Clang, both green. (Apple Clang and MSVC jobs are deferred to Phase 22 — Cross-platform CI hardening.)
   - clang-format and clang-tidy configs.
   - `README.md` stub linking to `specs/`.
-- **Acceptance.** Fresh clone → `cmake -B build && cmake --build build && ctest --test-dir build` passes on Ubuntu GCC and Ubuntu Clang. The full four-family CI bar from `tech-stack.md`'s compiler-support matrix is enforced at Phase 21, not here.
+- **Acceptance.** Fresh clone → `cmake -B build && cmake --build build && ctest --test-dir build` passes on Ubuntu GCC and Ubuntu Clang. The full four-family CI bar from `tech-stack.md`'s compiler-support matrix is enforced at Phase 22, not here.
 
 ## Phase 1 — Periodic 3D scalar grid + Laplacian
 
@@ -128,7 +128,7 @@ The ordering is deliberate: we drive a thin slice (scalar field, periodic, basic
 
 ## Phase 10 — Documentation infrastructure
 
-- **Goal.** Stand up the full documentation toolchain so every later phase can land its own incremental docs (API reference, User Guide chapters, Developer Note sections) into a working build. This phase is plumbing — each subsequent feature phase remains responsible for the doc deliverables it already lists (Cahn–Hilliard tutorial in Phase 12, diamond-lattice example in Phase 16, etc.); they fold in here rather than waiting for the v1.0 polish at Phase 22.
+- **Goal.** Stand up the full documentation toolchain so every later phase can land its own incremental docs (API reference, User Guide chapters, Developer Note sections) into a working build. This phase is plumbing — each subsequent feature phase remains responsible for the doc deliverables it already lists (Cahn–Hilliard tutorial in Phase 12, diamond-lattice example in Phase 17, etc.); they fold in here rather than waiting for the v1.0 polish at Phase 23.
 - **Replaces the lightweight pandoc-based render.** A `pandoc + pdflatex` render (`scripts/render-docs.sh` + the CI `render-docs` job, introduced post-Phase-4) currently produces interim aggregate PDFs from the markdown notes. Phase 10 retires that script and CI job in favor of the full LaTeX skeleton below.
 - **Deliverables.**
   - `docs/Doxyfile` configured for the public headers; Graphviz `dot` enabled for class / include / call graphs.
@@ -171,7 +171,20 @@ The ordering is deliberate: we drive a thin slice (scalar field, periodic, basic
   - `tensor/Contraction.hpp` — single and double contractions.
 - **Acceptance.** Vector identities (e.g. $\nabla\times\nabla\phi = 0$) recovered to discretization error.
 
-## Phase 14 — Functional evaluation for vector/tensor data
+## Phase 14 — Finite volume method (FVM)
+
+- **Goal.** A conservative cell-flux discretization of the diffusion operator with **heterogeneous diffusivity** $D(\mathbf{x})$ as the headline new capability. Adds the FVM foundation as a sibling to the existing FD `diff::laplacian` / `solve::diffuse(constant-D)` path; the Phase 1 / 5 / 6 surface stays unchanged.
+- **Deliverables.**
+  - `gridcalc::fvm` namespace and `include/gridcalc/fvm/CellLaplacian.hpp` — `fvm::cellLaplacian(psi, D)` returns $\nabla\cdot(D\,\nabla\psi)$ via cell-flux discretization with face-centered **harmonic-mean** D-averaging (the textbook FVM choice; recovers the correct steady-state flux across $D$-discontinuities).
+  - `solve::diffuse(psi, D_field, dt, n_steps, tag)` — new heterogeneous-D overload reusing the existing `solve::ExplicitEuler{}` / `solve::RK4{}` integrator tags. The constant-D Phase 5 / Phase 6 overload is unchanged. CFL check generalized to use `D_max` in place of `D`.
+  - User Guide chapter 14 + Developer Note chapter 13.
+- **Acceptance.**
+  - **Constant-$D$ agreement.** `fvm::cellLaplacian(psi, c_field) ≡ c · diff::laplacian(psi)` to round-off on a uniform Cartesian grid.
+  - **Heterogeneous-$D$ convergence.** Manufactured solution with $D(x) = 1 + 0.5\cos(x)$, $\psi(x) = \sin(x)$ recovers the analytical $\nabla\cdot(D\,\nabla\psi)$ at order 2 in $h$.
+  - **Conservation.** $\sum \texttt{fvm::cellLaplacian}(\psi, D) = 0$ to round-off on a periodic domain (telescoping fluxes).
+  - **End-to-end manufactured solution.** Heterogeneous-$D$ diffusion of a known closed-form decay matches the analytical answer at $t = 1$ to $O(h^2)$.
+
+## Phase 15 — Functional evaluation for vector/tensor data
 
 - **Goal.** Functionals over vector and tensor fields.
 - **Deliverables.**
@@ -179,7 +192,7 @@ The ordering is deliberate: we drive a thin slice (scalar field, periodic, basic
   - Worked example: linear elastic energy $F = \int \tfrac{1}{2}\,\boldsymbol{\sigma}:\boldsymbol{\varepsilon}\,dV$.
 - **Acceptance.** Elastic energy of a simple stretched cubic block matches the analytical value.
 
-## Phase 15 — Non-orthogonal Bravais lattices
+## Phase 16 — Non-orthogonal Bravais lattices
 
 - **Goal.** Support general single-atom Bravais lattices (FCC, BCC, hexagonal, triclinic) by introducing a basis transform between Cartesian and lattice coordinates.
 - **Deliverables.**
@@ -187,14 +200,14 @@ The ordering is deliberate: we drive a thin slice (scalar field, periodic, basic
   - Stencils continue to operate on lattice indices; derivatives are converted to Cartesian via $A^{-T}$ on the gradient (chain rule).
   - Decision documented: **derivatives are reported in Cartesian coordinates** regardless of grid basis. The user works in physically meaningful units; the lattice geometry is an implementation detail of the grid.
   - Tests: derivative of $\sin(\mathbf{k}\cdot\mathbf{x})$ on a sheared / hexagonal grid matches Cartesian truth.
-  - **Implementation note (decided 2026-05-01).** This phase is the planned integration point for [`byounghak/atomic-structure`](https://github.com/byounghak/atomic-structure) (currently v1.6.0 in `/Users/byounghak/Projects/KMC refactor/Atomic structure`). Its `Box` (origin + integer-direction columns + Cartesian lengths), `Crystal` (lattice matrix + basis atoms), and `Structure` (constructed lattice with `getCellCounts()` / `findIndex(basis_i, n1, n2, n3)` / minimum-image distance) map directly onto what this phase needs. The Phase 15 spec round will decide between (a) replacing `Grid`'s internals with `NSPC_Atomic_Structure::Structure` while keeping the public `Grid` API stable, vs. (b) consuming `Structure` directly. The dep enters via `FetchContent` against a tagged release; gridcalc's pinned Eigen must take precedence over atomic-structure's `FindOrFetchEigen.cmake`. Phase 1's `Grid` is intentionally an in-house Cartesian-only struct so that integration happens here rather than at the foundation.
+  - **Implementation note (decided 2026-05-01).** This phase is the planned integration point for [`byounghak/atomic-structure`](https://github.com/byounghak/atomic-structure) (currently v1.6.0 in `/Users/byounghak/Projects/KMC refactor/Atomic structure`). Its `Box` (origin + integer-direction columns + Cartesian lengths), `Crystal` (lattice matrix + basis atoms), and `Structure` (constructed lattice with `getCellCounts()` / `findIndex(basis_i, n1, n2, n3)` / minimum-image distance) map directly onto what this phase needs. The Phase 16 spec round will decide between (a) replacing `Grid`'s internals with `NSPC_Atomic_Structure::Structure` while keeping the public `Grid` API stable, vs. (b) consuming `Structure` directly. The dep enters via `FetchContent` against a tagged release; gridcalc's pinned Eigen must take precedence over atomic-structure's `FindOrFetchEigen.cmake`. Phase 1's `Grid` is intentionally an in-house Cartesian-only struct so that integration happens here rather than at the foundation.
 - **Acceptance.** Convergence tests pass on at least one non-orthogonal Bravais lattice (hexagonal recommended as the smoke test).
 
-## Phase 16 — Multi-atom basis (lattice with basis), unified differentiation
+## Phase 17 — Multi-atom basis (lattice with basis), unified differentiation
 
 - **Goal.** Generalize the data model from "one site per Bravais cell" to "$M$ sites per Bravais cell at fractional offsets $\{\boldsymbol{\tau}_\alpha\}$." Differential operators treat the multi-basis crystal as a **single decorated point lattice**: by default, the derivative at a site mixes contributions from **all** nearby sites regardless of sublattice. Decoupled per-sublattice differentiation is available as an opt-in.
 - **Deliverables.**
-  - `core/Basis.hpp` — a `Basis` value type holding $M$ and the fractional offsets $\{\boldsymbol{\tau}_\alpha\}$. Validated: offsets in $[0,1)^3$, no duplicates within a tolerance. **Implementation note:** if Phase 15 adopted `byounghak/atomic-structure`, `Basis` should be a thin adapter over `NSPC_Atomic_Structure::BasisAtom` (drop the species/name fields; keep just `fractional_position`) so Phase 15 and Phase 16 share one underlying lattice representation.
+  - `core/Basis.hpp` — a `Basis` value type holding $M$ and the fractional offsets $\{\boldsymbol{\tau}_\alpha\}$. Validated: offsets in $[0,1)^3$, no duplicates within a tolerance. **Implementation note:** if Phase 16 adopted `byounghak/atomic-structure`, `Basis` should be a thin adapter over `NSPC_Atomic_Structure::BasisAtom` (drop the species/name fields; keep just `fractional_position`) so Phase 16 and Phase 17 share one underlying lattice representation.
   - `Grid` gains a `Basis` member. The single-atom path is preserved as `Basis::trivial()` (the $M=1$ default); earlier phases keep working unchanged.
   - `Field<T>` carries an explicit **sublattice dimension**: storage shape becomes `(Nx, Ny, Nz, M)`. Indexing helpers: `field(i,j,k,alpha)` and `field.sublattice(alpha) -> a Bravais-shaped view`.
   - **Unified geometric stencils.** `core/Stencil.hpp` is extended so a stencil is defined by a set of **Cartesian offset vectors**, not lattice-index offsets. At stencil construction, each offset is resolved to a `(Bravais offset, target α)` pair against the chosen `Grid`+`Basis`. Standard 1D central-difference coefficients no longer apply (the resolved points aren't collinear and aren't equally spaced), so weights are derived by **generalized finite differences**: solve a small linear system that matches the Taylor moments of the requested derivative up to the prescribed accuracy order.
@@ -206,13 +219,13 @@ The ordering is deliberate: we drive a thin slice (scalar field, periodic, basic
 - **Acceptance.**
   - **Unified-default diamond test.** $\psi(\mathbf{x}) = \sin(\mathbf{k}\cdot\mathbf{x})$ sampled at every basis site (single smooth field across both sublattices) → unified $\nabla\psi$ recovers $\mathbf{k}\cos(\mathbf{k}\cdot\mathbf{x})$ at the prescribed order. Verified at 2nd and 4th order accuracy.
   - **Decoupled-mode test.** Two independent sinusoidal fields on the two sublattices → decoupled gradient produces results that depend only on each sublattice's own field; unified gradient produces the (correctly larger) coupled result.
-  - **Single-atom regression.** $M=1$ produces bit-identical numerics and bit-identical performance to Phase 15 on the same problem (verified by hash-comparing output and by a benchmark guard).
-  - **Storage parity.** $M=1$ storage overhead is zero relative to Phase 15 (verified by `sizeof` and a benchmark check).
+  - **Single-atom regression.** $M=1$ produces bit-identical numerics and bit-identical performance to Phase 16 on the same problem (verified by hash-comparing output and by a benchmark guard).
+  - **Storage parity.** $M=1$ storage overhead is zero relative to Phase 16 (verified by `sizeof` and a benchmark check).
   - **Weight-table sanity.** A unit test fails if any precomputed weight set violates its Taylor moment conditions beyond a documented tolerance.
 
-## Phase 17 — Sublattice-aware non-differential operators
+## Phase 18 — Sublattice-aware non-differential operators
 
-- **Goal.** A small operator family for quantities that are **explicitly between sublattices** but are *not* differentiation. These are distinct from the unified differential operators in Phase 16: they are algebraic / geometric reductions over the basis index, useful for tight-binding-like sums, sublattice-resolved order parameters, and inter-sublattice diffusion couplings.
+- **Goal.** A small operator family for quantities that are **explicitly between sublattices** but are *not* differentiation. These are distinct from the unified differential operators in Phase 17: they are algebraic / geometric reductions over the basis index, useful for tight-binding-like sums, sublattice-resolved order parameters, and inter-sublattice diffusion couplings.
 - **Deliverables.**
   - `diff/BondStencil.hpp` — geometric stencils defined by an explicit list of bond vectors (e.g. the four NN bonds in diamond). Distinct from the differential stencils because no derivative is computed; the stencil simply gathers values along bonds.
   - Operators that work on `Field<T>` of shape `(Nx, Ny, Nz, M)` and return a same-shape field:
@@ -222,7 +235,7 @@ The ordering is deliberate: we drive a thin slice (scalar field, periodic, basic
   - Tests: on a uniform field, NN-sum returns coordination-number × value; on a known antisymmetric mode, `sublattice_difference` returns the analytic amplitude.
 - **Acceptance.** Tested on diamond and on a graphene-style 3D-extruded geometry.
 
-## Phase 18 — Dirichlet and Neumann boundary conditions
+## Phase 19 — Dirichlet and Neumann boundary conditions
 
 - **Goal.** First non-periodic support. Stencils degrade gracefully near boundaries.
 - **Deliverables.**
@@ -231,7 +244,7 @@ The ordering is deliberate: we drive a thin slice (scalar field, periodic, basic
   - BC-aware `Laplacian` and `Gradient`.
 - **Acceptance.** Method-of-manufactured-solutions test on a Dirichlet box matches expected order to within boundary degradation.
 
-## Phase 19 — Implicit / semi-implicit diffusion
+## Phase 20 — Implicit / semi-implicit diffusion
 
 - **Goal.** Larger stable timesteps for stiff problems.
 - **Deliverables.**
@@ -239,7 +252,7 @@ The ordering is deliberate: we drive a thin slice (scalar field, periodic, basic
   - Solver dispatch: CG for SPD systems, BiCGSTAB otherwise.
 - **Acceptance.** Stable for $D\,dt/h^2 \gg 1$ on a benchmark; same accuracy as explicit at matching step sizes.
 
-## Phase 20 — Performance pass and benchmarks
+## Phase 21 — Performance pass and benchmarks
 
 - **Goal.** Pin down the v1 performance baseline.
 - **Deliverables.**
@@ -248,7 +261,7 @@ The ordering is deliberate: we drive a thin slice (scalar field, periodic, basic
   - Published baseline numbers in `bench/baselines/`.
 - **Acceptance.** Documented scaling to all CI cores; reproducible numbers committed to the repo.
 
-## Phase 21 — Cross-platform CI hardening (Apple Clang + MSVC)
+## Phase 22 — Cross-platform CI hardening (Apple Clang + MSVC)
 
 - **Goal.** Bring the GitHub Actions matrix up to the full four-family bar promised in `tech-stack.md` ("Compiler & platform support" + "Compiler support matrix"). Phase 0 deliberately shipped Linux-only CI to keep early iteration cheap; this phase closes the gap before v1.0.
 - **Deliverables.**
@@ -261,7 +274,7 @@ The ordering is deliberate: we drive a thin slice (scalar field, periodic, basic
   - No regressions on Linux: GCC and Clang jobs remain green throughout the portability work.
   - `tech-stack.md`'s compiler support matrix is now actually enforced rather than aspirational.
 
-## Phase 22 — Documentation polish, tutorial, v1.0 release
+## Phase 23 — Documentation polish, tutorial, v1.0 release
 
 - **Goal.** Release-ready per the production/industrial bar in `mission.md`. Most documentation content has accumulated incrementally since Phase 10; this phase is the final pass over completeness, polish, and the release artifacts. Distribution is private — release assets go to authorized recipients, not a public download page.
 - **Deliverables.**
@@ -287,10 +300,10 @@ These appear on the radar but are out of scope until post-1.0:
 
 ## Risks to watch
 
-- **Cross-platform portability drift.** Phase 0 ships Linux-only CI (Ubuntu GCC + Clang) and the four-family bar from `tech-stack.md` is not enforced until Phase 21. Apple Clang / MSVC portability bugs may accumulate across Phases 1–20 and surface in bulk at Phase 21. Mitigation: developers with macOS or Windows machines should spot-check builds locally on milestone phases (4, 9, 16); the Phase 21 fix-up budget should be planned as larger than a typical phase.
+- **Cross-platform portability drift.** Phase 0 ships Linux-only CI (Ubuntu GCC + Clang) and the four-family bar from `tech-stack.md` is not enforced until Phase 22. Apple Clang / MSVC portability bugs may accumulate across Phases 1–21 and surface in bulk at Phase 22. Mitigation: developers with macOS or Windows machines should spot-check builds locally on milestone phases (4, 9, 17); the Phase 22 fix-up budget should be planned as larger than a typical phase.
 - **Eigen's unsupported tensor module.** If `Eigen::TensorFixedSize` proves unstable for our rank-3/4 needs, we fall back to a small in-house `Tensor3` / `Tensor4` (deferred to phase 13+). Detection criterion: any compiler in the support matrix fails to build the tensor module headers cleanly.
 - **High-rank intermediate tensors.** A 4th-order gradient of rank-2 data is rank-6 (729 components/point). Functionals must be expressible as contractions that **never materialize** the full tensor — this constrains the API design at phase 11 and 14. Contraction expression templates may be needed.
-- **Boundary stencils at high accuracy.** A 4th-order biharmonic needs ~9 points; one-sided stencils near boundaries can be ill-conditioned. Phase 18 may require restricting accuracy in the boundary layer; this is acceptable and will be documented.
-- **Generalized-FD weight derivation.** With the unified mixing-by-default differentiation in Phase 16, stencil points are not collinear and not equally spaced, so closed-form 1D central-difference coefficients do not apply. Weights are derived per `(α, derivative, accuracy)` by solving a small Taylor-moment linear system at `Grid` construction. Risks: (1) the moment system can be ill-conditioned for poorly-chosen stencil shells — guard with a condition-number check and fall back to a larger shell; (2) weight tables grow with $M$ and accuracy order — measure cache impact in Phase 20 and shard if needed.
-- **Cost of unified differentiation.** Per gradient evaluation, the unified default does $\mathcal{O}(K \cdot M)$ work per site versus $\mathcal{O}(K)$ for the decoupled mode. For phase-field workloads this is acceptable and physically correct; it does shift the perf baseline at Phase 20, which should report numbers separately for $M=1$, $M=2$ (diamond), and $M=4$.
+- **Boundary stencils at high accuracy.** A 4th-order biharmonic needs ~9 points; one-sided stencils near boundaries can be ill-conditioned. Phase 19 may require restricting accuracy in the boundary layer; this is acceptable and will be documented.
+- **Generalized-FD weight derivation.** With the unified mixing-by-default differentiation in Phase 17, stencil points are not collinear and not equally spaced, so closed-form 1D central-difference coefficients do not apply. Weights are derived per `(α, derivative, accuracy)` by solving a small Taylor-moment linear system at `Grid` construction. Risks: (1) the moment system can be ill-conditioned for poorly-chosen stencil shells — guard with a condition-number check and fall back to a larger shell; (2) weight tables grow with $M$ and accuracy order — measure cache impact in Phase 21 and shard if needed.
+- **Cost of unified differentiation.** Per gradient evaluation, the unified default does $\mathcal{O}(K \cdot M)$ work per site versus $\mathcal{O}(K)$ for the decoupled mode. For phase-field workloads this is acceptable and physically correct; it does shift the perf baseline at Phase 21, which should report numbers separately for $M=1$, $M=2$ (diamond), and $M=4$.
 - **Spectral verification on multi-basis grids.** When the FFT verification harness is extended in Phases 15–16 to non-orthogonal lattices and multi-atom bases, the spectral path needs a sublattice-aware structure factor (sum over $\alpha$ of $e^{i\mathbf{k}\cdot\boldsymbol{\tau}_\alpha}$) so that derivatives match the FD convention. If this turns out to be subtle or expensive, the cross-check in those configurations may be reduced to a per-sublattice check on smooth fields rather than a full FD-vs-FFT identity test.

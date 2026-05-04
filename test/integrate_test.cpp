@@ -102,7 +102,7 @@ TEST(IntegrateTest, PairwiseAndKahanAgree) {
 
 TEST(IntegrateTest, DeterministicAcrossInvocations) {
   // Bit-equality across repeated invocations. At Phase 3 this is trivially
-  // satisfied because the reducer is single-threaded; Phase 20 expands this
+  // satisfied because the reducer is single-threaded; Phase 21 expands this
   // to vary OMP_NUM_THREADS while keeping bit-identical output.
   const int N = 32;
   const double h = 2.0 * kPi / static_cast<double>(N);
