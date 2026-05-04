@@ -16,6 +16,7 @@ add_executable(gridcalc_tests
     phase_8_test.cpp
     spectral_basic_test.cpp
     fd_fft_crosscheck_test.cpp
+    pfc_functional_test.cpp
 )
 
 target_link_libraries(gridcalc_tests PRIVATE
