@@ -51,7 +51,7 @@ struct deferred_false : std::false_type {};
 }  // namespace detail
 
 /// \brief Advances `psi` by `n_steps` forward-Euler steps of size `dt`,
-///        with $\dot\psi = \mathrm{rhs}(\psi)$.
+///        with $\partial_t\psi = \mathrm{rhs}(\psi)$.
 ///
 /// At each step:
 /// - `tmp = rhs(psi)` is evaluated (the RHS callable returns a fresh
@@ -63,7 +63,7 @@ struct deferred_false : std::false_type {};
 /// CFL-style argument that depends on the specific RHS.
 /// \tparam Rhs    RHS callable type; deduced from the argument.
 /// \param psi     The state field; mutated in place.
-/// \param rhs     The right-hand side $\dot\psi = \mathrm{rhs}(\psi)$.
+/// \param rhs     The right-hand side $\partial_t\psi = \mathrm{rhs}(\psi)$.
 ///                Must be invocable as
 ///                `Field<double> rhs(const Field<double>&)`.
 /// \param dt      Time step. Must be `>= 0`.
