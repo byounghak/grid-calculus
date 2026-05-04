@@ -55,18 +55,17 @@ jobs:
       - name: Install Doxygen, Graphviz, TeX Live
         run: |
           sudo apt-get update
+          # texlive-full guarantees all transitive dependencies of the
+          # Doxygen-generated doxygen.sty (notably stackengine + listofitems
+          # + tabu + adjustbox) are present without our having to map each
+          # .sty file to its containing apt package. The download is large
+          # (~2 GB) but only a one-time cost per CI run, and it sidesteps
+          # the per-Ubuntu-version drift in the texlive-* package layout.
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build \
             doxygen graphviz \
             latexmk \
-            texlive-latex-recommended \
-            texlive-latex-extra \
-            texlive-fonts-recommended \
-            texlive-pictures \
-            texlive-science \
-            lmodern
-          # texlive-science provides listofitems.sty (transitively pulled in by
-          # Doxygen-generated doxygen.sty via stackengine).
+            texlive-full
 
       - name: Configure (docs only)
         run: |
