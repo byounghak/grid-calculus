@@ -22,6 +22,7 @@ option(GRIDCALC_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 option(GRIDCALC_BUILD_TESTS "Build the gridcalc test suite" ON)
 option(GRIDCALC_USE_FFT "Build the verification-only spectral harness (vendored PocketFFT)" ON)
 option(GRIDCALC_BUILD_DOCS "Build the gridcalc documentation (Doxygen + LaTeX User Guide + Developer Note)" OFF)
+option(GRIDCALC_BUILD_EXAMPLES "Build the gridcalc example programs (Cahn–Hilliard, etc.)" OFF)
 
 add_library(gridcalc_warnings INTERFACE)
 if(MSVC)
@@ -78,4 +79,8 @@ endif()
 
 if(GRIDCALC_BUILD_DOCS)
     add_subdirectory(docs)
+endif()
+
+if(GRIDCALC_BUILD_EXAMPLES)
+    add_subdirectory(examples)
 endif()
