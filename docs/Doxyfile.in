@@ -17,6 +17,16 @@ RECURSIVE              = YES
 EXCLUDE_PATTERNS       = */detail/* */pocketfft_hdronly.h
 FILE_PATTERNS          = *.hpp *.h
 
+# Strip the absolute developer-machine / CI-runner prefix from paths
+# embedded in the generated documentation. With STRIP_FROM_PATH set to
+# the project root's parent directory, file references display as
+# `grid-calculus/include/gridcalc/...` rather than the full
+# `/Users/.../grid-calculus/include/gridcalc/...` (or
+# `/home/runner/work/grid-calculus/...` on CI). Recorded in
+# specs/tech-stack.md.
+STRIP_FROM_PATH        = "@CMAKE_SOURCE_DIR@/.."
+STRIP_FROM_INC_PATH    = "@CMAKE_SOURCE_DIR@/include"
+
 # Extraction scope: public symbols with explicit Doxygen blocks ---------------
 
 EXTRACT_ALL            = NO
