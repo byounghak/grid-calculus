@@ -209,7 +209,7 @@ preserved end-to-end) and delegate to
 \passthrough{\lstinline!(A.array() * B.array()).sum()!}
 respectively. Per Phase 13's design decision, the operations are
 fully materialized — every call allocates a fresh
-\passthrough{\lstinline!Field!} for the output. Phase 14 may replace
+\passthrough{\lstinline!Field!} for the output. Phase 15 may replace
 these with expression-template variants alongside the
 \passthrough{\lstinline!func::evaluate!}-over-tensor-fields surface
 that motivates them; at Phase 13's rank-2-only scope the rank-6
@@ -227,7 +227,7 @@ These distill the choices recorded in
   Phase 0 dependency surface is unchanged. The
   \passthrough{\lstinline!TensorFixedSize!} portability risk recorded
   under \passthrough{\lstinline!STATUS.md!}'s ``Open / deferred items''
-  stays deferred to Phase 14. No
+  stays deferred to Phase 15. No
   \passthrough{\lstinline!Tensor3!} /
   \passthrough{\lstinline!Tensor4!} aliases are introduced
   speculatively.
@@ -246,16 +246,16 @@ These distill the choices recorded in
   \passthrough{\lstinline!divergence!} names; new overloads on
   \passthrough{\lstinline!Field<Vec3d>!} /
   \passthrough{\lstinline!Field<Mat3d>!}. ADL resolves the right one;
-  Phase 14 may add a unifying templated form when rank-3 inputs
+  Phase 15 may add a unifying templated form when rank-3 inputs
   arrive. The Phase 7
   \passthrough{\lstinline!Order!} parameter is preserved on both new
   overloads.
 \item
-  \textbf{Materialized contractions, ETs deferred to Phase 14.}
+  \textbf{Materialized contractions, ETs deferred to Phase 15.}
   Mirrors the Phase 11 deferral rationale. Rank-2-only inputs do not
   trigger the rank-6 explosion that motivates ETs; the materialized
   forms are simple, debuggable, and adequate for the Phase 13 test
-  surface and Phase 14's eventual
+  surface and Phase 15's eventual
   \passthrough{\lstinline!½ \(\sigma\):\(\varepsilon\)!} elastic-energy
   worked example.
 \item
