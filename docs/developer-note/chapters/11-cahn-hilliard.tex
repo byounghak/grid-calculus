@@ -1,0 +1,477 @@
+\chapter{Cahn--Hilliard demo}
+\label{chap:dev:cahn-hilliard}
+
+\begin{quote}
+Phase metadata. Spec dir:
+\passthrough{\lstinline!specs/2026-05-03-phase-12-cahn-hilliard/!}.
+First scientifically-meaningful end-to-end demo: Cahn--Hilliard
+coarsening on a 3D periodic grid with explicit RK4 and a hand-written
+legacy-VTK snapshot writer. Version target:
+\passthrough{\lstinline!0.12.0!}.
+\end{quote}
+
+\subsection{1. Theory}\label{phase12-theory}
+
+\subsubsection{The Cahn--Hilliard equation}\label{phase12-ch}
+
+Cahn \& Hilliard (1958) introduced the conservative gradient flow
+\[
+\partial_t\psi(\mathbf x, t) \;=\; M\,\nabla^2\!\Big(\frac{\delta F}{\delta \psi}\Big),
+\qquad
+F[\psi] \;=\; \int_\Omega f(\psi, \nabla\psi)\,\dd V,
+\]
+as a model of phase separation in a binary alloy. The order parameter
+\(\psi\) is the local composition (or its deviation from a reference
+mean); \(M>0\) is the mobility. The dynamics is conservative ---
+\(\partial_t\!\int\psi = \oint(\text{flux})\cdot\dd\mathbf S = 0\) on a
+periodic or no-flux domain --- and is a gradient descent of \(F\) in
+the \(H^{-1}\) Sobolev metric induced by the
+\passthrough{\lstinline!\nabla^2!} prefactor.
+
+The standard Landau / Ginzburg form of the free-energy density,
+\[
+f(\psi, \nabla\psi) \;=\; -\tfrac12\psi^2 + \tfrac14\psi^4 + \tfrac{\kappa}{2}|\nabla\psi|^2,
+\]
+combines a non-convex bulk term with double-well minima at
+\(\psi=\pm 1\) and the standard interfacial-gradient penalty. The
+parameter \(\kappa>0\) sets the interfacial width
+\(\xi\sim\sqrt{\kappa}\) and the surface tension
+\(\sigma\sim\sqrt{\kappa}\) of the equilibrium domain wall (Cahn 1958).
+
+\subsubsection{Lyapunov property}\label{phase12-lyapunov}
+
+Multiplying the CH equation by
+\(\mu := \delta F/\delta\psi\) and integrating by parts:
+\[
+\frac{\dd F}{\dd t}
+   \;=\; \int \mu\,\partial_t\psi\,\dd V
+   \;=\; \int \mu\,M\nabla^2\mu\,\dd V
+   \;=\; -M\!\int |\nabla\mu|^2\,\dd V \;\le\; 0.
+\]
+\(F\) is therefore a Lyapunov functional --- the dynamics monotonically
+decreases \(F\) until \(\nabla\mu\equiv 0\), i.e., until \(\mu\) is
+spatially uniform (the equilibrium condition for two-phase coexistence
+at fixed mean composition). The Phase 12 acceptance test
+\passthrough{\lstinline!CahnHilliardCoarseningRun.LyapunovDecay!}
+locks this property in.
+
+\subsubsection{Spinodal decomposition and the
+coarsening regime}\label{phase12-coarsening}
+
+Around the unstable mean \(\bar\psi=0\), the linearized dynamics is
+\[
+\partial_t\delta\psi \;=\; M\,\nabla^2(-\delta\psi - \kappa\nabla^2\delta\psi)
+\quad\Longrightarrow\quad
+\sigma(\mathbf k) \;=\; M\,|\mathbf k|^2\,(1 - \kappa|\mathbf k|^2).
+\]
+\(\sigma>0\) for \(|\mathbf k|<\sqrt{\kappa^{-1}}\) (the spinodal
+band), maximized at
+\(k_*=1/\sqrt{2\kappa}\) with growth rate
+\(\sigma_{\max}=M/(4\kappa)\). Random ICs of small amplitude grow
+exponentially in the \(k_*\) shell until the cubic \(\psi^3\) term
+saturates at \(|\psi|\approx 1\).
+
+After saturation, the system enters the classical-coarsening regime
+described by Bray (1994): the typical domain size \(R(t)\) grows as
+\(t^{1/3}\) (Lifshitz--Slyozov scaling for a conserved scalar order
+parameter). The interfacial-area density and the structure-factor
+peak position \(k_*(t)\) both decrease as \(t^{-1/3}\). At the demo's
+finite size, the coarsening regime is captured qualitatively: the
+gradient energy \(E_{\text{grad}}\) peaks near
+\(k_*\approx k_{*,\text{linear}}\), then decreases monotonically.
+
+\subsection{2. Math derivation}\label{phase12-math}
+
+\subsubsection{Closed-form variational
+derivative}\label{phase12-deriv}
+
+For the Landau-double-well + gradient form,
+\(\delta F/\delta\psi\) is computed by the standard
+Euler--Lagrange recipe (taking
+\(\partial f/\partial\psi - \partial_a (\partial f/\partial\psi_{,a})\)):
+\begin{align*}
+\frac{\delta F}{\delta\psi}
+&\;=\; \frac{\partial f}{\partial\psi} - \nabla\!\cdot\!\frac{\partial f}{\partial(\nabla\psi)} \\
+&\;=\; (-\psi + \psi^3) - \nabla\!\cdot\!(\kappa\nabla\psi) \\
+&\;=\; -\psi + \psi^3 - \kappa\nabla^2\psi.
+\end{align*}
+The full RHS is \(M\nabla^2\) of this: two compositions of
+\passthrough{\lstinline!diff::laplacian!} per RHS evaluation, with a
+pointwise \(-\psi+\psi^3\) sandwiched between them.
+
+Phase 12 supplies this in closed form (no AD): the helper
+\passthrough{\lstinline!gridcalc::examples::cahn\_hilliard::computeRhs!}
+is a verbatim transcription of
+\(M\,\nabla^2(-\psi + \psi^3 - \kappa\nabla^2\psi)\) and is the only
+non-trivial mathematical content of
+\href{../../../examples/common/cahn_hilliard.hpp}{\passthrough{\lstinline!examples/common/cahn\_hilliard.hpp!}}.
+
+\subsubsection{Linear stability and the explicit-RK4 step
+budget}\label{phase12-rk4}
+
+The discrete operator \(\diff::laplacian\) has eigenvalues on the
+periodic grid \(\Lambda \in [-12/\Delta x^2,\,0]\) (each axis
+contributes \([-4/\Delta x^2,\,0]\) and they sum). Composed twice for
+the linearized RHS \(-M\nabla^2\psi - M\kappa\nabla^4\psi\), the
+eigenvalues become
+\[
+\omega(\Lambda) \;=\; -M\,\Lambda - M\,\kappa\,\Lambda^2 \;=\; -M\Lambda\,(1 + \kappa\Lambda).
+\]
+For \(\Lambda<0\) and \(|\kappa\Lambda|>1\), the second term
+dominates: \(\omega \approx -M\,\kappa\,\Lambda^2\).
+The most negative discrete eigenvalue is therefore at
+\(\Lambda_{\min} = -12/\Delta x^2\):
+\[
+|\omega|_{\max} \;\approx\; M\,\kappa\,\frac{144}{\Delta x^4}.
+\]
+
+Classical RK4 has a stability region intersecting the negative real
+axis at \(\Re(z)\in [-2.7853, 0]\) (LeVeque 2007, Chapter 7;
+Hairer--Nørsett--Wanner 1993). Stable explicit time stepping requires
+\(\Delta t\,|\omega|_{\max}\le 2.7853\), giving
+\[
+\Delta t_{\max} \;=\; \frac{2.7853\,\Delta x^4}{144\,M\,\kappa}.
+\]
+
+For the demo defaults \(M=\kappa=1\), \(\Delta x=1\):
+\(\Delta t_{\max}\approx 0.0193\). The default
+\passthrough{\lstinline!--dt 0.01!} leaves a 1.93\(\times\) safety
+factor; the test parameters \(\kappa=0.5\), \(\Delta t=0.02\) leave
+1.93\(\times\) as well (\(\Delta t_{\max} \approx 0.0387\) at
+\(\kappa=0.5\)).
+
+The \(\Delta x^4\) scaling is the central pain point: doubling the
+resolution divides the allowed step by 16. This is the structural
+reason implicit / IMEX schemes are essential for production-scale CH
+simulations and why Phase 19 is on the roadmap.
+
+\subsubsection{Why no \texttt{laplacian}\(\circ\)\texttt{laplacian}}\label{phase12-no-direct}
+
+The CH RHS could be written as
+\(M\,\nabla^2(-\psi + \psi^3) - M\kappa\,\nabla^2(\nabla^2\psi)\), with
+the second term coming from
+\passthrough{\lstinline!laplacian(laplacian(psi))!}. We instead use
+\(M\,\nabla^2(\mu)\) where
+\(\mu = -\psi + \psi^3 - \kappa\nabla^2\psi\) is computed once
+explicitly. The pointwise \(\psi^3\) factor in \(\mu\) couples the
+high-frequency content of \(\psi\) into the outer Laplacian's
+stencil radius, which is a feature, not a bug --- it captures the
+correct nonlinear contribution at the discrete level. Splitting the
+two operators and applying the second axis-decomposed Laplacian to
+\((\psi - \psi^3)\) separately would produce a different
+discretization with different leading-order error. The closed-form
+recipe is unambiguous; we follow it.
+
+\subsection{3. Algorithm}\label{phase12-algorithm}
+
+\subsubsection{File layout}\label{phase12-files}
+
+\begin{itemize}
+\tightlist
+\item
+  \href{../../../examples/cahn_hilliard.cpp}{\passthrough{\lstinline!examples/cahn\_hilliard.cpp!}}
+  --- \passthrough{\lstinline!main()!}, CLI parsing, RK4 time-stepping
+  loop, per-snapshot diagnostics + VTK write.
+\item
+  \href{../../../examples/common/cahn_hilliard.hpp}{\passthrough{\lstinline!examples/common/cahn\_hilliard.hpp!}}
+  --- \passthrough{\lstinline!computeRhs!},
+  \passthrough{\lstinline!computeFreeEnergy!},
+  \passthrough{\lstinline!computeGradientEnergy!},
+  \passthrough{\lstinline!computeMean!},
+  \passthrough{\lstinline!makeRandomIc!}.
+\item
+  \href{../../../examples/common/vtk_writer.hpp}{\passthrough{\lstinline!examples/common/vtk\_writer.hpp!}}
+  --- \passthrough{\lstinline!writeVtkStructuredPoints!} (legacy ASCII
+  VTK 3.0 \passthrough{\lstinline!STRUCTURED\_POINTS!} writer).
+\item
+  \href{../../../test/cahn_hilliard_test.cpp}{\passthrough{\lstinline!test/cahn\_hilliard\_test.cpp!}}
+  --- six tests including the three TEST\_F coarsening-property
+  assertions on a single shared 30\,s simulation.
+\item
+  \href{../../../test/vtk_writer_test.cpp}{\passthrough{\lstinline!test/vtk\_writer\_test.cpp!}}
+  --- three round-trip checks of the VTK writer (header shape,
+  payload exact-match in i-fastest order, scalars-line field-name
+  round-trip).
+\item
+  \href{../../../scripts/render_ch_snapshots.py}{\passthrough{\lstinline!scripts/render\_ch\_snapshots.py!}}
+  --- matplotlib helper that renders 2D z-midplane PNGs from the
+  written \passthrough{\lstinline!.vtk!} snapshots.
+\end{itemize}
+
+\subsubsection{Build wiring}\label{phase12-build}
+
+A new top-level option
+\passthrough{\lstinline!GRIDCALC\_BUILD\_EXAMPLES!} (default
+\passthrough{\lstinline!OFF!}, mirroring Phase 10's
+\passthrough{\lstinline!GRIDCALC\_BUILD\_DOCS!}) gates an
+\passthrough{\lstinline!add\_subdirectory(examples)!} from the root
+\passthrough{\lstinline!CMakeLists.txt!}. The child file
+\passthrough{\lstinline!examples/CMakeLists.txt!} declares the
+\passthrough{\lstinline!cahn\_hilliard!} target, links it against
+\passthrough{\lstinline!gridcalc::gridcalc!} and
+\passthrough{\lstinline!gridcalc\_warnings!}, and adds
+\passthrough{\lstinline!examples/!} to its include path so the helper
+headers under \passthrough{\lstinline!examples/common/!} are reachable
+as \passthrough{\lstinline!\#include <common/...>!}.
+
+CI (both Ubuntu GCC and Ubuntu Clang) configures with
+\passthrough{\lstinline!-DGRIDCALC\_BUILD\_EXAMPLES=ON!} so the
+example is type-checked under the project's strict warning set on
+every PR. The example binary is \emph{not} run in CI; the runtime
+gate is the acceptance test in \passthrough{\lstinline!test/!}, which
+includes the helpers as headers and is therefore active regardless
+of \passthrough{\lstinline!GRIDCALC\_BUILD\_EXAMPLES!}.
+
+\subsubsection{Time-stepping loop and per-step
+allocations}\label{phase12-loop}
+
+Time stepping is \passthrough{\lstinline!solve::integrate(psi, rhs,
+dt, n, RK4{})!} (Phase 6) applied in chunks of
+\passthrough{\lstinline!--snapshot-every!} steps. Per RK4 step:
+\begin{itemize}
+\tightlist
+\item \(4\times\) RHS evaluations
+   (\passthrough{\lstinline!computeRhs!}),
+\item each \passthrough{\lstinline!computeRhs!} allocates 3 fresh
+   \passthrough{\lstinline!Field<double>!}: one for
+   \passthrough{\lstinline!lap\_psi!}, one for the chemical potential
+   \(\mu\), one for the outer \passthrough{\lstinline!lap\_mu!} which
+   is the returned RHS,
+\item plus the four
+   \passthrough{\lstinline!detail::axpyFresh!}
+   intermediate fields (\(y_2\), \(y_3\), \(y_4\), and the four
+   \(k_i\)) that Phase 6's RK4 implementation already materializes,
+\item per step: \(4 \cdot 3 + 8 = 20\)
+   \passthrough{\lstinline!Field<double>!} allocations.
+\end{itemize}
+
+At \(N=64\) (\(64^3 = 262{,}144\) doubles \(\approx 2.1\,\)MB per
+\passthrough{\lstinline!Field<double>!}), the per-step transient
+working set is \(\sim 42\,\)MB --- well within working-set targets but
+representative of the per-step churn that Phase 20's performance pass
+will replace with a persistent scratch pool.
+
+\subsubsection{Snapshot writing}\label{phase12-snapshot}
+
+\passthrough{\lstinline!writeVtkStructuredPoints!} writes the legacy
+ASCII VTK 3.0 format:
+
+\begin{lstlisting}
+# vtk DataFile Version 3.0
+gridcalc field: psi
+ASCII
+DATASET STRUCTURED_POINTS
+DIMENSIONS Nx Ny Nz
+ORIGIN 0 0 0
+SPACING hx hy hz
+POINT_DATA Nx*Ny*Nz
+SCALARS psi double 1
+LOOKUP_TABLE default
+<value at flat index 0>
+<value at flat index 1>
+...
+\end{lstlisting}
+
+The data block is a flat read of \passthrough{\lstinline!field.data()!}
+in i-fastest order (\(\text{idx} = i + N_x j + N_x N_y k\)) --- exactly
+the order VTK \passthrough{\lstinline!STRUCTURED\_POINTS!} expects, so
+no transposition is needed. Values are emitted with 17-digit
+decimal precision (\passthrough{\lstinline!std::ofstream::precision(17)!})
+to round-trip a \passthrough{\lstinline!double!} losslessly.
+
+ASCII (rather than binary or XML \passthrough{\lstinline!.vti!}) is
+the deliberate choice: \(\sim 30\) lines of hand-written I/O, no new
+build dependency, human-readable for debugging. The file size is
+\(\sim 25\,\)bytes per grid point in ASCII vs.\ \(8\) for binary; at
+\(N=64\) that is \(6.5\,\)MB per snapshot --- inconvenient at very
+high resolution but irrelevant for the demo budget. Production users
+needing binary or XML VTK should integrate
+\passthrough{\lstinline!vtkIO!} directly.
+
+\subsubsection{Acceptance-test instrumentation}\label{phase12-acc}
+
+\passthrough{\lstinline!test/cahn\_hilliard\_test.cpp!} runs a small
+CH simulation once per process inside a static-cached lambda
+\passthrough{\lstinline!Snaps()!}. Three \passthrough{\lstinline!TEST\_F!}
+bodies share the result, so the \(\sim 30\,\)s simulation does not
+repeat per test:
+
+\begin{lstlisting}[language={C++}]
+static const std::vector<Snapshot>& Snaps() {
+    static const std::vector<Snapshot> snaps = []() {
+        // ...build IC, run 4 RK4 segments, collect 5 snapshots...
+    }();
+    return snaps;
+}
+\end{lstlisting}
+
+The test parameters
+(\(N=24\), \(\Delta t=0.02\), \(\kappa=0.5\), \(M=1\), amplitude
+\(0.1\), seed 42, 4 segments of \{500, 500, 500, 1000\} steps for
+snapshots at \(t \in \{0,10,20,30,50\}\)) are calibrated so the
+\(t=30\) snapshot lies just past the gradient-energy peak and the
+\(t=50\) snapshot is one decade into the coarsening regime. Locally
+measured gradient-energy drops across seeds \(\{1, 2, 7, 42, 1234\}\)
+range from 4.83\,\% to 7.85\,\%; the test asserts a 3\,\% drop ---
+robust against \passthrough{\lstinline!std::uniform\_real\_distribution!}
+differences across libstdc++ and libc++.
+
+\subsubsection{Snapshot rendering and figure
+generation}\label{phase12-figures}
+
+\passthrough{\lstinline!scripts/render\_ch\_snapshots.py!} parses the
+ASCII VTK header positionally (the writer's output is fully
+deterministic), reshapes the 1D payload back to \((N_z, N_y, N_x)\)
+(the inverse of the i-fastest layout), and renders the z-midplane
+slice with the \passthrough{\lstinline!matplotlib!} ``Agg'' backend
+(no display dependency). The three figures committed under
+\passthrough{\lstinline!docs/user-guide/figures/cahn-hilliard/!}
+were generated from a \(64^3\) release-build run at the demo's
+default parameters at steps \(\{2000, 4000, 8000\}\) (corresponding
+to \(t \in \{20, 40, 80\}\)).
+
+\subsection{4. Design decisions}\label{phase12-decisions}
+
+These distill the choices recorded in
+\passthrough{\lstinline!specs/2026-05-03-phase-12-cahn-hilliard/requirements.md!}.
+
+\begin{itemize}
+\item
+  \textbf{Standard Landau-double-well + gradient term, hand-coded
+  \(\delta F/\delta\psi\).} The textbook CH form, parameterless
+  except for the explicit \(\kappa\) and \(M\) (both default to 1).
+  Closed-form variational derivative; no automatic differentiation
+  anywhere on the roadmap. Logarithmic / Flory--Huggins forms were
+  considered and rejected for this phase --- they add
+  \passthrough{\lstinline!(0,1)!}-clamping concerns that obscure the
+  demo's qualitative-coarsening message.
+\item
+  \textbf{Explicit RK4 via Phase 6's
+  \passthrough{\lstinline!solve::integrate!}.} Zero new solver code.
+  Semi-implicit / IMEX paths (which would need
+  Fourier-diagonalization, violating the
+  \passthrough{\lstinline!mission.md!} ``FFT verification only''
+  decision) and matrix-free implicit schemes (Phase 19's natural
+  scope) are explicitly out of scope. The brutal
+  \(\Delta t \sim h^4\) scaling is documented; resolution is small
+  enough in the demo that the budget stays sub-minute.
+\item
+  \textbf{Legacy ASCII VTK \passthrough{\lstinline!STRUCTURED\_POINTS!}.}
+  Hand-written, no new dependency, opens directly in ParaView and
+  VisIt. Binary VTK was considered (\(5\)--\(10\times\) smaller files,
+  endian-handling complexity); XML \passthrough{\lstinline!.vti!} was
+  considered (modern format, more code to write correctly without a
+  library). For a demo budget the ASCII form is correct.
+\item
+  \textbf{Per-step interval cadence (\passthrough{\lstinline!--snapshot-every!})
+  rather than wall-clock.} The simulation is deterministic; clock
+  reading would add machinery for no scientific benefit. The CLI
+  exposes the cadence so the user can tune snapshot density without
+  rebuilding.
+\item
+  \textbf{Fixed-seed mean-subtracted random IC.} The random-uniform
+  amplitude is mean-subtracted to enforce \(\Sigma\psi=0\) at machine
+  precision, ensuring CH's exact mass conservation starts from a
+  zero-mean state. \passthrough{\lstinline!std::mt19937\_64!} is
+  deterministic across implementations; only
+  \passthrough{\lstinline!std::uniform\_real\_distribution!} differs.
+  The acceptance test's
+  \passthrough{\lstinline!SeedReproducibility!} check verifies
+  in-implementation reproducibility.
+\item
+  \textbf{Visual + monotone-coarsening acceptance bar.} Two evidence
+  streams: three committed PNG snapshots in the User Guide chapter
+  (qualitative match to published CH images) plus the programmatic
+  \passthrough{\lstinline!CahnHilliardCoarseningRun!} tests in CI
+  (Lyapunov decay, monotone coarsening of the gradient energy, mass
+  conservation). A quantitative \(R(t)\sim t^{1/3}\) power-law fit was
+  considered and rejected for this phase: at the affordable grid size
+  the slope estimate is noisy enough that any threshold band wide
+  enough to be robust would also be uninformative. Could ship later
+  as a separate non-CI benchmark.
+\item
+  \textbf{Helper headers under
+  \passthrough{\lstinline!examples/common/!}, not in
+  \passthrough{\lstinline!include/gridcalc/!}.} The CH RHS, energy
+  diagnostics, IC generator, and VTK writer are not part of the
+  library's public API. The Phase 10 \passthrough{\lstinline!\\since!}
+  lint regex covers \passthrough{\lstinline!include/gridcalc/!}; placing
+  the example helpers there would either force them onto the public
+  API surface or require a lint-regex carve-out for a non-library
+  subdirectory. Keeping them in
+  \passthrough{\lstinline!examples/common/!} avoids both. Tests
+  \passthrough{\lstinline!\#include!} the helpers via the
+  \passthrough{\lstinline!target\_include\_directories!} entry added
+  in \passthrough{\lstinline!test/CMakeLists.txt!}.
+\end{itemize}
+
+\subsection{5. References}\label{phase12-references}
+
+External:
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Cahn, J. W., \& Hilliard, J. E. (1958). \emph{Free Energy
+  of a Nonuniform System. I. Interfacial Free Energy}. Journal of
+  Chemical Physics, 28(2), 258--267.}
+  \url{https://doi.org/10.1063/1.1744102}. Original derivation of the
+  gradient-energy functional and its variational derivative; the
+  source of the Landau-double-well + gradient form used here.
+\item
+  \textbf{Cahn, J. W. (1959). \emph{Free Energy of a Nonuniform
+  System. II. Thermodynamic Basis}. Journal of Chemical Physics,
+  30(5), 1121--1124.} \url{https://doi.org/10.1063/1.1730145}.
+  Companion paper deriving the dynamical equation
+  \(\partial_t\psi = M\nabla^2\mu\) on thermodynamic grounds.
+\item
+  \textbf{Bray, A. J. (1994). \emph{Theory of phase-ordering
+  kinetics}. Advances in Physics, 43(3), 357--459.}
+  \url{https://doi.org/10.1080/00018739400101505}. The canonical
+  reference on classical-coarsening scaling (\(R(t)\sim t^{1/3}\) for
+  conserved scalar order parameters; \(t^{1/2}\) for non-conserved);
+  Section 4 covers Cahn--Hilliard specifically.
+\item
+  \textbf{Provatas, N., \& Elder, K. R. (2010). \emph{Phase-Field
+  Methods in Materials Science and Engineering}. Wiley-VCH.} ISBN
+  978-3-527-40747-7. Chapters 2--3 cover the Cahn--Hilliard
+  derivation, equilibrium interface profile, and surface tension
+  expressions used informally in
+  \Cref{phase12-ch}.
+\item
+  \textbf{LeVeque, R. J. (2007). \emph{Finite Difference Methods for
+  Ordinary and Partial Differential Equations}. SIAM.}
+  \url{https://doi.org/10.1137/1.9780898717839}. Chapter 7 (``Absolute
+  stability for ODEs'') gives the RK4 stability region and the
+  \(2.7853\) intersection with the negative real axis used in
+  \Cref{phase12-rk4}.
+\item
+  \textbf{Hairer, E., Nørsett, S. P., \& Wanner, G. (1993).
+  \emph{Solving Ordinary Differential Equations I: Nonstiff
+  Problems} (2nd ed.). Springer-Verlag.} ISBN 978-3-540-56670-0.
+  Section II.4 derives the classical RK4 stability polynomial and
+  region; cross-checked against the LeVeque value.
+\item
+  \textbf{VTK File Formats reference.} Permanent URL:
+  \url{https://kitware.github.io/vtk-examples/site/VTKFileFormats/}.
+  Defines the legacy \passthrough{\lstinline!STRUCTURED\_POINTS!}
+  ASCII format used by \passthrough{\lstinline!writeVtkStructuredPoints!}.
+\end{itemize}
+
+Internal cross-references (do not satisfy the ``external'' minimum):
+
+\begin{itemize}
+\tightlist
+\item
+  \Cref{chap:dev:periodic-3d-scalar-laplacian} --- Phase 1's
+  \passthrough{\lstinline!diff::laplacian!}, applied twice per CH RHS
+  evaluation.
+\item
+  \Cref{chap:dev:rk4--generic-time-integrator} --- Phase 6's
+  tag-dispatched \passthrough{\lstinline!solve::integrate(..., RK4{})!}
+  used as the time-stepping driver.
+\item
+  \Cref{chap:dev:functional-evaluation} --- Phase 4's
+  \passthrough{\lstinline!func::evaluate!}, used to compute \(F\),
+  \(E_{\text{grad}}\), and \(\langle\psi\rangle\) over the demo state.
+\end{itemize}
