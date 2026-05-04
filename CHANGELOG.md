@@ -4,6 +4,117 @@ All notable changes to gridcalc are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## 0.12.0 — Phase 12: Cahn–Hilliard example end-to-end
+
+### Added
+
+- **`examples/` subtree, gated by a new `GRIDCALC_BUILD_EXAMPLES`
+  CMake option** (default `OFF`, mirroring Phase 10's
+  `GRIDCALC_BUILD_DOCS`). The first example, `cahn_hilliard`, solves
+  the conservative phase-field equation
+  $\partial_t\psi = M\nabla^2(-\psi + \psi^3 - \kappa\nabla^2\psi)$
+  on a periodic 3D grid using explicit RK4 (Phase 6
+  `solve::integrate(..., RK4{})`) and the 2nd-order finite-difference
+  Laplacian (Phase 1 `diff::laplacian`). CLI options expose grid size,
+  time step, integration length, snapshot cadence, $\kappa$ / $M$,
+  RNG seed, and output directory; the binary writes one VTK snapshot
+  per `--snapshot-every` steps and prints free energy / gradient
+  energy / mean / `max|psi|` to stdout. CI builds the example under
+  the project's strict warning set on every PR (`-DGRIDCALC_BUILD_EXAMPLES=ON`)
+  but does not run it; the runtime gate is the new acceptance test.
+- **`examples/common/cahn_hilliard.hpp`** — header-only RHS and energy
+  diagnostics shared between the demo binary and the acceptance test.
+  Exposes `computeRhs`, `computeFreeEnergy`, `computeGradientEnergy`,
+  `computeMean`, and `makeRandomIc` under
+  `gridcalc::examples::cahn_hilliard`. The energy helpers route
+  through the Phase 4 / Phase 11 `func::evaluate` API to exercise the
+  functional surface on a real workload.
+- **`examples/common/vtk_writer.hpp`** — hand-written legacy ASCII
+  VTK 3.0 `STRUCTURED_POINTS` writer for `Field<double>`. ~30 lines,
+  no new build dependency, opens directly in ParaView and VisIt.
+  `gridcalc::examples::writeVtkStructuredPoints(field, path, name)`
+  emits the `DIMENSIONS` / `ORIGIN` / `SPACING` block followed by a
+  single `SCALARS <name> double 1` array; the i-fastest storage layout
+  matches VTK's expected order for `STRUCTURED_POINTS` so the payload
+  is a flat read of `field.data()`.
+- **Acceptance test** (`test/cahn_hilliard_test.cpp`, six tests).
+  Three quick correctness checks (`ZeroRhsForConstantField`,
+  `RhsIsConservative`, `SeedReproducibility`) plus three properties of
+  a single ~30 s simulation shared across the three TEST_F bodies via
+  a static-cached lambda: `LyapunovDecay` (F(t) is monotonically
+  non-increasing), `MonotoneCoarsening` (gradient energy
+  $\int|\nabla\psi|^2\,dV$ drops at least 3% from t=30 (peak) to t=50
+  (post-coarsening); locally observed 4.83%–7.85% across seeds {1, 2,
+  7, 42, 1234}), `MassConservation`
+  (`|<psi>(t_final) - <psi>(0)| < 1e-10`). Discharges the roadmap
+  acceptance bar "coarsening dynamics qualitatively match published
+  CH benchmarks."
+- **VTK writer round-trip test** (`test/vtk_writer_test.cpp`, three
+  tests): header-shape, payload exact-match in i-fastest order, and
+  scalars-line field-name round-trip.
+- **`scripts/render_ch_snapshots.py`** — matplotlib helper that parses
+  the legacy ASCII VTK snapshots and renders 2D z-midplane PNGs for
+  the User Guide chapter. Headless ("Agg" backend); used to generate
+  the three committed coarsening figures from a 64³ release-build run
+  at the demo's default parameters.
+- **User Guide chapter 12** — *Cahn–Hilliard demo* —
+  `docs/user-guide/chapters/12-cahn-hilliard.tex` (replaces the Phase
+  11 placeholder). Walks the equation → code → results sequence with
+  the closed-form variational derivative, the $\Delta x^4$ explicit
+  RK4 stability budget, a code-walkthrough citing `computeRhs` and the
+  `func::evaluate`-routed energy diagnostics, run instructions, and a
+  three-figure coarsening sequence (early / mid / late at t=20, 40,
+  80).
+- **Developer Note chapter 11** — *Cahn–Hilliard demo* —
+  `docs/developer-note/chapters/11-cahn-hilliard.tex` with the
+  standing five-section structure (Theory · Math derivation ·
+  Algorithm · Design decisions · References). Theory: Cahn–Hilliard
+  1958 I+II, the Lyapunov property, Bray's classical-coarsening
+  scaling. Math derivation: Euler–Lagrange δF/δψ, linearized
+  dispersion σ(k) = M k²(1 − κk²), discrete worst-case eigenvalue
+  feeding the RK4 Δt budget. Algorithm: file layout, build wiring,
+  per-step allocation budget (~20 fields / step at the default
+  resolution), VTK writer format, acceptance-test instrumentation.
+  Design decisions: the four AskUserQuestion answers + helpers-under-
+  examples decision. References: Cahn–Hilliard 1958 I+II, Bray 1994,
+  Provatas–Elder 2010, LeVeque 2007, Hairer–Nørsett–Wanner 1993, and
+  the VTK file-format reference (all with permanent
+  identifiers / DOIs).
+
+### Changed
+
+- **Version bumped to `0.12.0`.**
+- **CI configures with `-DGRIDCALC_BUILD_EXAMPLES=ON`** on both Ubuntu
+  jobs so the example is type-checked under the project's strict
+  warning set on every PR.
+- **`test/CMakeLists.txt`** adds `${CMAKE_SOURCE_DIR}/examples` to
+  `gridcalc_tests`'s include path so the helper headers under
+  `examples/common/` are reachable from `test/` as
+  `#include <common/...>`.
+
+### Notes
+
+- **No new public symbols in `include/gridcalc/`.** Phase 12 consumes
+  Phases 1–8 and adds files only under `examples/`, `test/`, `docs/`,
+  and `scripts/`. The Phase 10 `\since` lint regex covers
+  `include/gridcalc/` only and is unaffected. Phase 9's FD–FFT
+  cross-check fixture is also unaffected (no new FD operators).
+- **No FFT-diagonalized / IMEX time stepping.** The "FFT verification
+  only" rule (mission.md) and the deferral of implicit schemes to
+  Phase 19 keep that work out of this phase. The
+  $\Delta t \sim h^4 / (M\kappa)$ explicit-RK4 stability cost is
+  documented in both doc chapters.
+
+### Tests
+
+- 223 tests pass on `clang-debug` (214 prior + 6 new in
+  `cahn_hilliard_test.cpp` + 3 new in `vtk_writer_test.cpp`).
+- 147 tests pass on `clang-debug-nofft` (138 prior + 9 new; none of the
+  new tests use the spectral path so the FFT-off build picks up all
+  nine).
+- The CH gate runs in ~30 s on Apple Clang debug; well under the
+  60 s budget.
+
 ## 0.11.0 — Phase 11: Functional with up-to-4th-order gradients
 
 ### Added
