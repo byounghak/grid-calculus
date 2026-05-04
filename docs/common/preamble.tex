@@ -68,6 +68,43 @@
 \definecolor{lststring}{RGB}{160,80,40}
 \definecolor{lstbg}{RGB}{248,248,248}
 
+% `listings` does not honor `inputenc utf8` inside `\lstinline!...!`, so
+% Unicode glyphs that the migrated chapters contain inside code spans
+% (`ψ`, `≤`, `²`, etc.) must be mapped via `literate=` substitutions.
+% Each substitution maps the UTF-8 glyph to a printable LaTeX form.
+\lstset{
+    extendedchars=true,
+    literate=%
+        {²}{{$^2$}}1
+        {³}{{$^3$}}1
+        {⁴}{{$^4$}}1
+        {≤}{{$\leq$}}1
+        {≥}{{$\geq$}}1
+        {≈}{{$\approx$}}1
+        {·}{{$\cdot$}}1
+        {×}{{$\times$}}1
+        {−}{{-}}1
+        {⇒}{{$\Rightarrow$}}1
+        {→}{{$\to$}}1
+        {∂}{{$\partial$}}1
+        {∇}{{$\nabla$}}1
+        {∫}{{$\int$}}1
+        {∈}{{$\in$}}1
+        {∘}{{$\circ$}}1
+        {α}{{$\alpha$}}1
+        {β}{{$\beta$}}1
+        {ε}{{$\varepsilon$}}1
+        {μ}{{$\mu$}}1
+        {π}{{$\pi$}}1
+        {σ}{{$\sigma$}}1
+        {ψ}{{$\psi$}}1
+        {Δ}{{$\Delta$}}1
+        {Ψ}{{$\Psi$}}1
+        {Θ}{{$\Theta$}}1
+        {θ}{{$\theta$}}1
+        {ℓ}{{$\ell$}}1
+}
+
 \lstdefinestyle{gridcalcCpp}{
     language=C++,
     basicstyle=\ttfamily\small,
