@@ -116,28 +116,6 @@ Options parseOptions(int argc, char** argv) {
     return o;
 }
 
-// Uniform random IC on (-amplitude, amplitude), then mean-subtracted so
-// the discrete sum over psi is zero to round-off. CH dynamics conserves
-// the spatial mean exactly on a periodic domain, so the simulation
-// stays at <psi> = 0.
-Field<double> makeRandomIc(const Grid& grid, std::uint64_t seed, double amplitude) {
-    Field<double> psi(grid);
-    std::mt19937_64 rng(seed);
-    std::uniform_real_distribution<double> dist(-amplitude, amplitude);
-    const std::size_t n = grid.getSize();
-    double sum = 0.0;
-    for (std::size_t idx = 0; idx < n; ++idx) {
-        const double v = dist(rng);
-        psi.data()[idx] = v;
-        sum += v;
-    }
-    const double mean = sum / static_cast<double>(n);
-    for (std::size_t idx = 0; idx < n; ++idx) {
-        psi.data()[idx] -= mean;
-    }
-    return psi;
-}
-
 double computeMaxAbs(const Field<double>& psi) {
     double m = 0.0;
     const std::size_t n = psi.getSize();
@@ -175,7 +153,7 @@ int main(int argc, char** argv) {
         std::filesystem::create_directories(opts.out_dir);
 
         Grid grid(opts.Nx, opts.Nx, opts.Nx, Vec3d(1.0, 1.0, 1.0));
-        Field<double> psi = makeRandomIc(grid, opts.seed, 0.05);
+        Field<double> psi = ch::makeRandomIc(grid, opts.seed, 0.05);
 
         std::cout << "Cahn-Hilliard demo  N=" << opts.Nx << "^3"
                   << "  dt=" << opts.dt

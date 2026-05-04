@@ -19,9 +19,12 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
+#include <random>
 
 #include <gridcalc/core/EigenAliases.hpp>
 #include <gridcalc/core/Field.hpp>
+#include <gridcalc/core/Grid.hpp>
 #include <gridcalc/diff/Laplacian.hpp>
 #include <gridcalc/func/Functional.hpp>
 
@@ -71,6 +74,32 @@ inline double computeGradientEnergy(const core::Field<double>& psi) {
     return func::evaluate(psi, [](double, const core::Vec3d& g) {
         return g.squaredNorm();
     });
+}
+
+/// Uniform random initial condition `psi ~ U(-amplitude, amplitude)` with
+/// the empirical mean subtracted so the discrete sum over `psi` is zero
+/// to round-off. CH dynamics conserves the spatial mean exactly on a
+/// periodic domain, so the run stays at `<psi> = 0` for the duration.
+/// Seeded by `seed` (`std::mt19937_64`) so the IC is bit-reproducible
+/// for a given seed within one libstdc++/libc++ implementation.
+inline core::Field<double> makeRandomIc(const core::Grid& grid,
+                                        std::uint64_t seed,
+                                        double amplitude) {
+    core::Field<double> psi(grid);
+    std::mt19937_64 rng(seed);
+    std::uniform_real_distribution<double> dist(-amplitude, amplitude);
+    const std::size_t n = grid.getSize();
+    double sum = 0.0;
+    for (std::size_t idx = 0; idx < n; ++idx) {
+        const double v = dist(rng);
+        psi.data()[idx] = v;
+        sum += v;
+    }
+    const double mean = sum / static_cast<double>(n);
+    for (std::size_t idx = 0; idx < n; ++idx) {
+        psi.data()[idx] -= mean;
+    }
+    return psi;
 }
 
 /// Mean field `<psi> = (1/V) \int psi dV`. CH dynamics conserves it
