@@ -4,6 +4,75 @@ All notable changes to gridcalc are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## 0.10.0 — Phase 10: Documentation infrastructure
+
+### Added
+
+- **Doxygen + LaTeX documentation toolchain.** New `docs/Doxyfile.in`
+  configured for the public headers (excluding `detail/`), with
+  Graphviz `dot` enabled for class / include graphs. New `docs/CMakeLists.txt`
+  declares three custom targets — `gridcalc-docs-doxygen`,
+  `gridcalc-docs-userguide`, `gridcalc-docs-developernote` — and an
+  umbrella `gridcalc-docs-all`. New build flag `GRIDCALC_BUILD_DOCS`
+  (default `OFF` so contributors without TeX Live aren't blocked).
+- **User Guide LaTeX skeleton** (`memoir` class) under
+  `docs/user-guide/`. New "Hello grid" tutorial chapter walks through
+  the operators delivered through Phase 9 with one continuous example.
+  Per-phase chapters 02–10 carry the absorbed-from-markdown reference
+  content; chapters 11–12 are placeholder stubs reserved for Phases 12
+  (Cahn–Hilliard) and 16 (diamond-lattice).
+- **Developer Note LaTeX skeleton** (`book` class) under
+  `docs/developer-note/`. Chapters 01–09 carry the absorbed
+  developer-note content (five-section structure preserved). The back
+  matter `\input{}`s the Doxygen-generated content extracted from
+  `refman.tex` via `docs/extract-api-reference.sh` so the auto-built
+  API reference for every public Phase 0–9 symbol lives in the same
+  PDF.
+- **Per-phase markdown notes absorbed into LaTeX chapters.** The 18
+  files under `docs/{user-guide,developer-note}/notes/phase-N-*.md`
+  are pandoc-converted into LaTeX chapters; the `notes/` directories
+  are emptied. From Phase 11 onward, doc deliverables go straight to
+  the LaTeX sources.
+- **`scripts/build-docs.sh`** — driver that runs the full docs pipeline
+  via the CMake targets above.
+- **`scripts/check-since.py`** — `\since`-tag lint over public headers.
+  Walks `include/gridcalc/**/*.hpp` (excluding `detail/`), identifies
+  public-API declarations, and verifies each preceding Doxygen block
+  contains an explicit `\since` line. Exits non-zero on any miss.
+- **CI `docs-build` job** installs TeX Live + Doxygen + Graphviz and
+  produces three artifacts in the `gridcalc-docs-pdfs` bundle (Doxygen
+  output tarball, User Guide PDF, Developer Note PDF) on every PR.
+- **CI `docs-lint` job** runs Doxygen with `WARN_IF_UNDOCUMENTED=YES`
+  and parses the warnings log (allowing benign math-mode warnings
+  only); also runs `scripts/check-since.py`. Becomes a permanent CI
+  gate from Phase 10 forward.
+
+### Changed
+
+- `specs/tech-stack.md` Documentation section updated: pandoc removed
+  from the required toolchain (was only used by the lightweight
+  pre-Phase-10 render); the `\since` policy is now CI-enforced.
+- `scripts/get-docs.sh` `--local` mode now drives the new full-LaTeX
+  pipeline via `scripts/build-docs.sh` instead of the retired pandoc
+  render. The `gridcalc-docs-pdfs` artifact name is unchanged.
+- `include/gridcalc/solve/{ExplicitEuler,RK4}.hpp` Doxygen comments
+  switched from `$\dot\psi = ...$` to `$\partial_t\psi = ...$`. The
+  earlier form tripped Doxygen's `\dot` graph-block parser; the math
+  is equivalent.
+
+### Removed
+
+- **`scripts/render-docs.sh`** — retired alongside the CI
+  `Render Doc PDFs` job in favor of the full LaTeX skeleton.
+- **`docs/{user-guide,developer-note}/notes/phase-N-*.md`** (18 files)
+  — absorbed into LaTeX chapters.
+
+### Documentation
+
+- `docs/README.md` documents the local build commands for all three
+  artifacts, the required local toolchain, and the `scripts/get-docs.sh --ci`
+  fallback.
+
 ## 0.9.0 — Phase 9: Spectral verification harness
 
 ### Added
