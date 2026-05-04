@@ -49,7 +49,7 @@ add_custom_target(gridcalc-docs-userguide-prep
 # Doxygen-generated multiply-defined labels). Wrap in a shell command that
 # treats "PDF was produced and is non-empty" as success.
 add_custom_target(gridcalc-docs-userguide
-    COMMAND sh -c "${LATEXMK_EXECUTABLE} -pdf -interaction=nonstopmode -f -file-line-error main.tex || true && test -s main.pdf"
+    COMMAND sh -c "${LATEXMK_EXECUTABLE} -xelatex -interaction=nonstopmode -f -file-line-error main.tex || true && test -s main.pdf"
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/docs/user-guide"
     DEPENDS gridcalc-docs-userguide-prep
     COMMENT "Building User Guide PDF (latexmk)"
@@ -89,7 +89,7 @@ add_custom_target(gridcalc-docs-extract-api-ref
 # non-zero exit on benign warnings (multiply-defined labels in the
 # Doxygen output, undefined refs on the first pass before convergence).
 add_custom_target(gridcalc-docs-developernote
-    COMMAND sh -c "TEXINPUTS=\"${CMAKE_BINARY_DIR}/docs/doxygen/latex:\" ${LATEXMK_EXECUTABLE} -pdf -interaction=nonstopmode -f -file-line-error main.tex || true && test -s main.pdf"
+    COMMAND sh -c "TEXINPUTS=\"${CMAKE_BINARY_DIR}/docs/doxygen/latex:\" ${LATEXMK_EXECUTABLE} -xelatex -interaction=nonstopmode -f -file-line-error main.tex || true && test -s main.pdf"
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/docs/developer-note"
     DEPENDS gridcalc-docs-developernote-prep
             gridcalc-docs-doxygen
