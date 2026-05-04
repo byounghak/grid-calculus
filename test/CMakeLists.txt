@@ -20,6 +20,7 @@ add_executable(gridcalc_tests
     vtk_writer_test.cpp
     cahn_hilliard_test.cpp
     vector_tensor_test.cpp
+    fvm_cell_laplacian_test.cpp
 )
 
 # Tests for the example helpers (`examples/common/...`) include them
