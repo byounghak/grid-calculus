@@ -1,0 +1,82 @@
+% docs/user-guide/main.tex
+%
+% Grid Calculus — User Guide (memoir class).
+% Built via `latexmk -pdf` from build/docs/user-guide/. See docs/README.md
+% and docs/CMakeLists.txt.
+
+\documentclass[11pt,oneside,openany]{memoir}
+
+\input{../common/preamble.tex}
+
+\title{Grid Calculus \\ \large User Guide}
+\author{Byounghak H. Lee}
+\date{}
+
+% --- memoir-class layout settings --------------------------------------------
+
+\setstocksize{11in}{8.5in}
+\settrimmedsize{11in}{8.5in}{*}
+\setlength{\trimtop}{0pt}
+\setlength{\trimedge}{0pt}
+\settypeblocksize{8in}{6in}{*}
+\setlrmargins{*}{*}{1}
+\setulmargins{*}{*}{1}
+\setheadfoot{\baselineskip}{2\baselineskip}
+\setheaderspaces{*}{2\baselineskip}{*}
+\checkandfixthelayout
+
+\chapterstyle{section}
+\setsecnumdepth{subsection}
+\settocdepth{section}
+
+\begin{document}
+
+% --- Front matter -------------------------------------------------------------
+
+\frontmatter
+
+\begin{titlingpage}
+    \centering
+    \vspace*{2cm}
+    {\Huge\bfseries Grid Calculus \par}
+    \vspace{0.5cm}
+    {\Large User Guide \par}
+    \vspace{1.5cm}
+    {\large Byounghak H.~Lee \par}
+    \vspace{0.5cm}
+    {Version \texttt{0.10.0} \par}
+    \vfill
+    {\small Proprietary; all rights reserved.}
+\end{titlingpage}
+
+\tableofcontents*
+
+% --- Main matter --------------------------------------------------------------
+
+\mainmatter
+
+\input{chapters/01-hello-grid.tex}
+
+\input{chapters/02-grid-and-laplacian.tex}
+\input{chapters/03-gradient-divergence.tex}
+\input{chapters/04-domain-integration.tex}
+\input{chapters/05-functional-evaluation.tex}
+\input{chapters/06-explicit-euler.tex}
+\input{chapters/07-rk4-integrator.tex}
+\input{chapters/08-higher-order-stencils.tex}
+\input{chapters/09-higher-order-derivatives.tex}
+\input{chapters/10-spectral-verification.tex}
+
+\input{chapters/11-cahn-hilliard.tex}
+\input{chapters/12-diamond-lattice.tex}
+
+% --- Back matter --------------------------------------------------------------
+
+\backmatter
+
+\chapter*{License}
+
+Proprietary. All rights reserved. Redistribution requires authorization
+from the project owner. See the repository's \path{LICENSE} file.
+
+\end{document}
