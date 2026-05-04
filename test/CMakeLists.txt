@@ -21,6 +21,7 @@ add_executable(gridcalc_tests
     cahn_hilliard_test.cpp
     vector_tensor_test.cpp
     fvm_cell_laplacian_test.cpp
+    fvm_diffusion_acceptance_test.cpp
 )
 
 # Tests for the example helpers (`examples/common/...`) include them
