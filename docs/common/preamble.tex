@@ -7,14 +7,18 @@
 
 % --- Encoding -----------------------------------------------------------------
 %
-% pdflatex with UTF-8 input. The pandoc-migrated chapters from
-% docs/{user-guide,developer-note}/notes/ contain assorted Unicode
-% glyphs (Greek, math symbols) outside `$...$` math mode; `inputenc`
-% utf8 + `textcomp` covers the common cases.
+% Engine-detection idiom: pdflatex needs `inputenc utf8` + `\DeclareUnicodeCharacter`
+% mappings to render Greek / math glyphs the migrated chapters use outside
+% math mode; xelatex / lualatex handle Unicode natively via `fontspec`.
 
-\usepackage[utf8]{inputenc}
-\usepackage[T1]{fontenc}
-\usepackage{textcomp}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[utf8]{inputenc}
+  \usepackage[T1]{fontenc}
+  \usepackage{textcomp}
+\else
+  \usepackage{fontspec}
+\fi
 
 % --- Math ---------------------------------------------------------------------
 
@@ -23,40 +27,52 @@
 \usepackage{amsfonts}
 \usepackage{mathtools}
 
-% Common Unicode glyphs that pandoc emits in prose (not in math mode) and
-% pdflatex's default declaration set doesn't cover. Map them to math-mode
-% renders so chapters built from the migrated markdown notes compile.
-\DeclareUnicodeCharacter{21D2}{\ensuremath{\Rightarrow}}    % ⇒
-\DeclareUnicodeCharacter{2192}{\ensuremath{\to}}            % →
-\DeclareUnicodeCharacter{2200}{\ensuremath{\forall}}        % ∀
-\DeclareUnicodeCharacter{2208}{\ensuremath{\in}}            % ∈
-\DeclareUnicodeCharacter{2218}{\ensuremath{\circ}}          % ∘
-\DeclareUnicodeCharacter{2202}{\ensuremath{\partial}}       % ∂
-\DeclareUnicodeCharacter{2207}{\ensuremath{\nabla}}         % ∇
-\DeclareUnicodeCharacter{222B}{\ensuremath{\int}}           % ∫
-\DeclareUnicodeCharacter{2248}{\ensuremath{\approx}}        % ≈
-\DeclareUnicodeCharacter{2264}{\ensuremath{\le}}            % ≤
-\DeclareUnicodeCharacter{2265}{\ensuremath{\ge}}            % ≥
-\DeclareUnicodeCharacter{00B7}{\ensuremath{\cdot}}          % ·
-\DeclareUnicodeCharacter{00D7}{\ensuremath{\times}}         % ×
-\DeclareUnicodeCharacter{2212}{-}                            % − (minus)
-\DeclareUnicodeCharacter{00B2}{\ensuremath{^2}}             % ²
-\DeclareUnicodeCharacter{00B3}{\ensuremath{^3}}             % ³
-\DeclareUnicodeCharacter{2074}{\ensuremath{^4}}             % ⁴
-\DeclareUnicodeCharacter{03B1}{\ensuremath{\alpha}}         % α
-\DeclareUnicodeCharacter{03B2}{\ensuremath{\beta}}          % β
-\DeclareUnicodeCharacter{03B3}{\ensuremath{\gamma}}         % γ
-\DeclareUnicodeCharacter{03B5}{\ensuremath{\varepsilon}}    % ε
-\DeclareUnicodeCharacter{03BC}{\ensuremath{\mu}}            % μ
-\DeclareUnicodeCharacter{03C0}{\ensuremath{\pi}}            % π
-\DeclareUnicodeCharacter{03C3}{\ensuremath{\sigma}}         % σ
-\DeclareUnicodeCharacter{03C8}{\ensuremath{\psi}}           % ψ
-\DeclareUnicodeCharacter{0394}{\ensuremath{\Delta}}         % Δ
-\DeclareUnicodeCharacter{03A8}{\ensuremath{\Psi}}           % Ψ
-\DeclareUnicodeCharacter{0398}{\ensuremath{\Theta}}         % Θ
-\DeclareUnicodeCharacter{03B8}{\ensuremath{\theta}}         % θ
-\DeclareUnicodeCharacter{2113}{\ensuremath{\ell}}           % ℓ
-\DeclareUnicodeCharacter{2032}{\ensuremath{'}}              % ′ (prime)
+% --- Tables (pandoc emits longtable for markdown tables) ----------------------
+
+\usepackage{longtable}
+\usepackage{booktabs}
+
+% Pandoc-emitted body of `--listings` markdown tables expects these.
+\providecommand{\toprule}{\hline}
+\providecommand{\midrule}{\hline}
+\providecommand{\bottomrule}{\hline}
+
+\ifPDFTeX
+  % Common Unicode glyphs that pandoc emits in prose (not in math mode) and
+  % pdflatex's default declaration set doesn't cover. Map them to math-mode
+  % renders so chapters built from the migrated markdown notes compile.
+  \DeclareUnicodeCharacter{21D2}{\ensuremath{\Rightarrow}}    % ⇒
+  \DeclareUnicodeCharacter{2192}{\ensuremath{\to}}            % →
+  \DeclareUnicodeCharacter{2200}{\ensuremath{\forall}}        % ∀
+  \DeclareUnicodeCharacter{2208}{\ensuremath{\in}}            % ∈
+  \DeclareUnicodeCharacter{2218}{\ensuremath{\circ}}          % ∘
+  \DeclareUnicodeCharacter{2202}{\ensuremath{\partial}}       % ∂
+  \DeclareUnicodeCharacter{2207}{\ensuremath{\nabla}}         % ∇
+  \DeclareUnicodeCharacter{222B}{\ensuremath{\int}}           % ∫
+  \DeclareUnicodeCharacter{2248}{\ensuremath{\approx}}        % ≈
+  \DeclareUnicodeCharacter{2264}{\ensuremath{\le}}            % ≤
+  \DeclareUnicodeCharacter{2265}{\ensuremath{\ge}}            % ≥
+  \DeclareUnicodeCharacter{00B7}{\ensuremath{\cdot}}          % ·
+  \DeclareUnicodeCharacter{00D7}{\ensuremath{\times}}         % ×
+  \DeclareUnicodeCharacter{2212}{-}                            % − (minus)
+  \DeclareUnicodeCharacter{00B2}{\ensuremath{^2}}             % ²
+  \DeclareUnicodeCharacter{00B3}{\ensuremath{^3}}             % ³
+  \DeclareUnicodeCharacter{2074}{\ensuremath{^4}}             % ⁴
+  \DeclareUnicodeCharacter{03B1}{\ensuremath{\alpha}}         % α
+  \DeclareUnicodeCharacter{03B2}{\ensuremath{\beta}}          % β
+  \DeclareUnicodeCharacter{03B3}{\ensuremath{\gamma}}         % γ
+  \DeclareUnicodeCharacter{03B5}{\ensuremath{\varepsilon}}    % ε
+  \DeclareUnicodeCharacter{03BC}{\ensuremath{\mu}}            % μ
+  \DeclareUnicodeCharacter{03C0}{\ensuremath{\pi}}            % π
+  \DeclareUnicodeCharacter{03C3}{\ensuremath{\sigma}}         % σ
+  \DeclareUnicodeCharacter{03C8}{\ensuremath{\psi}}           % ψ
+  \DeclareUnicodeCharacter{0394}{\ensuremath{\Delta}}         % Δ
+  \DeclareUnicodeCharacter{03A8}{\ensuremath{\Psi}}           % Ψ
+  \DeclareUnicodeCharacter{0398}{\ensuremath{\Theta}}         % Θ
+  \DeclareUnicodeCharacter{03B8}{\ensuremath{\theta}}         % θ
+  \DeclareUnicodeCharacter{2113}{\ensuremath{\ell}}           % ℓ
+  \DeclareUnicodeCharacter{2032}{\ensuremath{'}}              % ′ (prime)
+\fi
 
 % --- Code listings ------------------------------------------------------------
 
