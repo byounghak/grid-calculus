@@ -1,0 +1,328 @@
+\chapter{Vector and tensor fields}
+\label{chap:dev:vector-tensor-fields}
+
+\begin{quote}
+Phase metadata. Spec dir:
+\passthrough{\lstinline!specs/2026-05-04-phase-13-vector-tensor-fields/!}.
+Generalizes \passthrough{\lstinline!Field<T>!} to a rank-2 element
+type and adds rank-raising / rank-lowering
+\passthrough{\lstinline!gradient!} and
+\passthrough{\lstinline!divergence!} overloads, plus the contraction
+primitives \passthrough{\lstinline!trace!},
+\passthrough{\lstinline!singleContract!}, and
+\passthrough{\lstinline!doubleContract!}. Version target:
+\passthrough{\lstinline!0.13.0!}.
+\end{quote}
+
+\subsection{1. Theory}\label{phase13-theory}
+
+\subsubsection{Rank-raising gradients on continuous
+fields}\label{phase13-continuous}
+
+For a smooth scalar field \(\phi: \mathbb{R}^3 \to \mathbb{R}\), the
+gradient is a rank-1 covector field
+\((\nabla\phi)_j = \partial_j\phi\). For a smooth vector field
+\(v: \mathbb{R}^3 \to \mathbb{R}^3\), the natural rank-raising
+operator is the Jacobian-style rank-2 tensor field
+\((\nabla v)_{ij}\), traditionally defined either as
+\((\nabla v)_{ij} = \partial_j v_i\) (the velocity-gradient
+convention used in continuum mechanics) or as
+\((\nabla v)_{ij} = \partial_i v_j\) (some textbooks). Phase 13
+adopts the velocity-gradient form so that the trace recovers the
+divergence:
+\[
+\mathrm{tr}(\nabla v) = (\nabla v)_{ii} = \partial_i v_i = \nabla\cdot v.
+\]
+Combined with the matched divergence
+\((\mathrm{div}\,M)_i = \partial_j M_{ij}\), the composition
+\((\mathrm{div}(\nabla v))_i = \partial_j\partial_j v_i\) is the
+\(i\)-th Cartesian component of the vector Laplacian — the third
+roadmap-acceptance identity.
+
+\subsubsection{Schwarz's theorem and the
+curl-of-gradient identity}\label{phase13-schwarz}
+
+For \(\phi \in C^2\), Schwarz's theorem (also: Clairaut's theorem)
+gives
+\(\partial_i\partial_j\phi = \partial_j\partial_i\phi\). The Hessian
+\(H_{ij} := \partial_j\partial_i\phi\) is therefore symmetric, which
+is equivalent to the vector identity
+\(\nabla\times\nabla\phi \equiv 0\) on simply connected domains:
+the antisymmetric part of the Hessian, recoverable as the curl of the
+gradient, vanishes identically. Phase 13 verifies this in
+rank-raising vocabulary by computing
+\passthrough{\lstinline!gradient(gradient(phi))!} directly and
+asserting symmetry of the resulting
+\passthrough{\lstinline!Field<Mat3d>!} pointwise.
+
+\subsection{2. Math derivation}\label{phase13-math}
+
+\subsubsection{Discrete commutativity of partial-difference
+operators}\label{phase13-commute}
+
+Let \(D_a\) denote the discrete first-derivative operator along axis
+\(a\) using the
+\passthrough{\lstinline!stencil::FirstDerivative<Order>!} weights
+\((w[m], \mathit{off}[m])\). On a periodic uniform grid:
+\[
+(D_a\,\psi)_p \;=\; h_a^{-1} \sum_m w[m]\,\psi_{p + \mathit{off}[m]\,e_a}.
+\]
+Composing two such operators along (possibly equal) axes \(a\), \(b\):
+\[
+(D_b\,D_a\,\psi)_p \;=\; (h_a h_b)^{-1} \sum_{m, m'} w[m]\,w[m']\,\psi_{p + \mathit{off}[m]\,e_a + \mathit{off}[m']\,e_b}.
+\]
+The right-hand side is symmetric in the pair \((a, m) \leftrightarrow
+(b, m')\): swapping the two summation pairs leaves the result
+unchanged. Therefore \(D_b\,D_a\,\psi = D_a\,D_b\,\psi\) at every
+grid point — the discrete partial-difference operators commute on a
+periodic uniform grid \emph{exactly} (modulo round-off in the
+accumulated sum), not merely at convergence rate. Hessian symmetry is
+therefore a round-off-level property of the discrete computation, not
+a stencil-order one. The Phase 13 test asserts a max-asymmetry below
+\(10^{-12}\).
+
+\subsubsection{Trace = divergence pointwise to
+round-off}\label{phase13-trace}
+
+The rank-2 gradient overload computes, at each grid point,
+\(M(0, 0) = (D_x v_x)\), \(M(1, 1) = (D_y v_y)\), and
+\(M(2, 2) = (D_z v_z)\). The Phase 2 scalar divergence applied to the
+same \(v\) computes the same three quantities and sums them in a
+single per-point accumulation. The two routes therefore agree
+pointwise to round-off — only the order of the floating-point
+summation can differ.
+
+\subsubsection{Vector Laplacian via composition: the stride-2
+phenomenon, revisited}\label{phase13-stride2}
+
+For the discrete divergence-of-gradient on a vector field:
+\[
+(\mathrm{div}(\nabla v))_i \;=\; D_j\,M(i, j) \;=\; D_j\,(D_j v_i) \;=\; (D_j)^2 v_i,
+\]
+i.e., the discrete operator
+\((D_j)^2\) acts on \(v_i\) componentwise and the three axis
+contributions are summed. Each \((D_j)^2\) is the composition of two
+\passthrough{\lstinline!FirstDerivative<2>!} stencils: at offsets
+\((-1, 1)\), \((-1, 1)\), the resulting effective stencil reaches
+offsets \((-2, 0, +2)\) along axis \(j\) — a \emph{stride-2}
+second-derivative stencil. Compare with
+\passthrough{\lstinline!diff::laplacian!}, which uses the 3-point
+\((-1, 0, +1)\) stencil from
+\passthrough{\lstinline!Coefficients<2>!}. Both stencils are
+\(\mathcal{O}(h^2)\) accurate but with different leading-error
+constants (the stride-2 form has a leading error factor of 4× the
+3-point form on uniform mode amplitude). Phase 2's STATUS line
+already records this for the scalar case
+\passthrough{\lstinline!divergence(gradient(\(\psi\)))!} versus
+\passthrough{\lstinline!laplacian(\(\psi\))!}.
+
+For the manufactured field
+\(v = (\sin x \cos y,\, \sin y \cos z,\, \sin z \cos x)\), the
+analytical componentwise Laplacian is \(\nabla^2 v = -2\,v\): each
+component depends on exactly two axes, contributing
+\(-\sin(\cdot)\cos(\cdot)\) per axis when differentiated twice. The
+test asserts the rate of agreement between
+\passthrough{\lstinline!divergence(gradient(v))!} and the analytical
+\(-2v\) on \(N \in \{16, 32, 64\}\) at slope in
+\([1.7, 2.3]\).
+
+\subsection{3. Algorithm}\label{phase13-algorithm}
+
+\subsubsection{File layout}\label{phase13-files}
+
+\begin{itemize}
+\tightlist
+\item
+  \href{../../../include/gridcalc/core/EigenAliases.hpp}{\passthrough{\lstinline!include/gridcalc/core/EigenAliases.hpp!}}
+  — adds \passthrough{\lstinline!Mat3d!} alongside
+  \passthrough{\lstinline!Vec3d!}.
+\item
+  \href{../../../include/gridcalc/diff/Gradient.hpp}{\passthrough{\lstinline!include/gridcalc/diff/Gradient.hpp!}}
+  — extended with the new
+  \passthrough{\lstinline!Field<Vec3d> -> Field<Mat3d>!} overload.
+\item
+  \href{../../../include/gridcalc/diff/Divergence.hpp}{\passthrough{\lstinline!include/gridcalc/diff/Divergence.hpp!}}
+  — extended with the new
+  \passthrough{\lstinline!Field<Mat3d> -> Field<Vec3d>!} overload.
+\item
+  \href{../../../include/gridcalc/tensor/Contraction.hpp}{\passthrough{\lstinline!include/gridcalc/tensor/Contraction.hpp!}}
+  — new file: \passthrough{\lstinline!trace!},
+  \passthrough{\lstinline!singleContract!},
+  \passthrough{\lstinline!doubleContract!}.
+\item
+  \href{../../../test/vector_tensor_test.cpp}{\passthrough{\lstinline!test/vector\_tensor\_test.cpp!}}
+  — new file: 16 tests covering the new types, the convergence rates,
+  the contraction primitives, and the three identity acceptance
+  checks.
+\item
+  \href{../../../test/field_test.cpp}{\passthrough{\lstinline!test/field\_test.cpp!}}
+  — extended with four
+  \passthrough{\lstinline!FieldMat3dTest!} cases.
+\end{itemize}
+
+\subsubsection{Loop structure of the rank-2
+gradient}\label{phase13-grad-loop}
+
+\begin{lstlisting}[language={C++}]
+for (int k = 0; k < grid.getNz(); ++k)
+  for (int j = 0; j < grid.getNy(); ++j)
+    for (int i = 0; i < grid.getNx(); ++i) {
+      Mat3d M;
+      for (int comp = 0; comp < 3; ++comp) {
+        // Three independent stencil sums, one per axis.
+        double dx = 0, dy = 0, dz = 0;
+        for (m in stencil) {
+          dx += w[m] * field(i + off[m], j, k)(comp);
+          dy += w[m] * field(i, j + off[m], k)(comp);
+          dz += w[m] * field(i, j, k + off[m])(comp);
+        }
+        M(comp, 0) = dx * inv_hx;
+        M(comp, 1) = dy * inv_hy;
+        M(comp, 2) = dz * inv_hz;
+      }
+      result(i, j, k) = M;
+    }
+\end{lstlisting}
+
+The inner-most stencil sum is unchanged from Phase 2's scalar
+gradient; the outer loop replicates it three times (once per vector
+component) and packs the results into rows of the output matrix. The
+\passthrough{\lstinline!Vec3d!}-valued field access
+\passthrough{\lstinline!field(i + off, j, k)(comp)!} reads one
+\passthrough{\lstinline!Vec3d!} (24 bytes) and extracts a single
+\passthrough{\lstinline!double!} from it; modern compilers should
+fold this into a single load.
+
+The rank-2 divergence has the dual structure: one stencil sum per
+output component, summed across the three axes.
+
+\subsubsection{Contraction primitives: pointwise loops over
+\passthrough{\lstinline!data()!}}\label{phase13-contraction}
+
+\passthrough{\lstinline!trace!},
+\passthrough{\lstinline!singleContract!}, and
+\passthrough{\lstinline!doubleContract!} all use a single flat loop
+over \passthrough{\lstinline!Field::data()!} (i-fastest order is
+preserved end-to-end) and delegate to
+\passthrough{\lstinline!Eigen::Matrix3d::trace()!},
+\passthrough{\lstinline!operator*!}, and
+\passthrough{\lstinline!(A.array() * B.array()).sum()!}
+respectively. Per Phase 13's design decision, the operations are
+fully materialized — every call allocates a fresh
+\passthrough{\lstinline!Field!} for the output. Phase 14 may replace
+these with expression-template variants alongside the
+\passthrough{\lstinline!func::evaluate!}-over-tensor-fields surface
+that motivates them; at Phase 13's rank-2-only scope the rank-6
+explosion the ETs are meant to fend off does not yet appear.
+
+\subsection{4. Design decisions}\label{phase13-decisions}
+
+These distill the choices recorded in
+\passthrough{\lstinline!specs/2026-05-04-phase-13-vector-tensor-fields/requirements.md!}.
+
+\begin{itemize}
+\item
+  \textbf{Rank-2 type backed by \passthrough{\lstinline!Eigen::Matrix3d!}.}
+  Standard Eigen module, not the unsupported tensor module — the
+  Phase 0 dependency surface is unchanged. The
+  \passthrough{\lstinline!TensorFixedSize!} portability risk recorded
+  under \passthrough{\lstinline!STATUS.md!}'s ``Open / deferred items''
+  stays deferred to Phase 14. No
+  \passthrough{\lstinline!Tensor3!} /
+  \passthrough{\lstinline!Tensor4!} aliases are introduced
+  speculatively.
+\item
+  \textbf{Index convention
+  \(M(i, j) = \partial_j v_i\).} Velocity-gradient form: row index =
+  vector component, column index = derivative axis. Trace gives the
+  divergence; the matched
+  \passthrough{\lstinline!divergence(M)\(_i\) = \(\partial_j M(i, j)\)!}
+  makes the third roadmap-acceptance identity drop out by
+  construction. Documented on the new gradient overload's Doxygen
+  block.
+\item
+  \textbf{Function overloading on input type.} Same
+  \passthrough{\lstinline!gradient!} /
+  \passthrough{\lstinline!divergence!} names; new overloads on
+  \passthrough{\lstinline!Field<Vec3d>!} /
+  \passthrough{\lstinline!Field<Mat3d>!}. ADL resolves the right one;
+  Phase 14 may add a unifying templated form when rank-3 inputs
+  arrive. The Phase 7
+  \passthrough{\lstinline!Order!} parameter is preserved on both new
+  overloads.
+\item
+  \textbf{Materialized contractions, ETs deferred to Phase 14.}
+  Mirrors the Phase 11 deferral rationale. Rank-2-only inputs do not
+  trigger the rank-6 explosion that motivates ETs; the materialized
+  forms are simple, debuggable, and adequate for the Phase 13 test
+  surface and Phase 14's eventual
+  \passthrough{\lstinline!½ \(\sigma\):\(\varepsilon\)!} elastic-energy
+  worked example.
+\item
+  \textbf{Three-identity acceptance bar instead of explicit
+  \passthrough{\lstinline!curl!}.} The literal roadmap
+  example \(\nabla\times\nabla\phi = 0\) is captured as Hessian
+  symmetry; an explicit \passthrough{\lstinline!curl!} (rank-1
+  \(\to\) rank-1) is not introduced. Adds the
+  \passthrough{\lstinline!trace!}-=-divergence and
+  \passthrough{\lstinline!div(grad(v))!}-=-vector-Laplacian
+  identities for breadth — three independent strands of evidence the
+  operators agree as a coherent algebraic system.
+\end{itemize}
+
+\subsection{5. References}\label{phase13-references}
+
+External:
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Gurtin, M. E. (1981). \emph{An Introduction to Continuum
+  Mechanics}. Academic Press.} ISBN 978-0-12-309750-7.
+  Section 4 (``Material and Spatial Descriptions'') and Section 6
+  (``Tensor Fields'') give the velocity-gradient convention
+  \((\nabla v)_{ij} = \partial_j v_i\) used throughout this phase
+  and the corresponding rank-lowering divergence and Laplacian
+  identities.
+\item
+  \textbf{Holzapfel, G. A. (2000). \emph{Nonlinear Solid Mechanics:
+  A Continuum Approach for Engineering}. Wiley.} ISBN
+  978-0-471-82319-3. Sections 1.4--1.6 cover the same conventions
+  with explicit index-notation examples that match the Phase 13 unit
+  tests.
+\item
+  \textbf{LeVeque, R. J. (2007). \emph{Finite Difference Methods for
+  Ordinary and Partial Differential Equations}. SIAM.}
+  \url{https://doi.org/10.1137/1.9780898717839}. Section 2.18 covers
+  composed-operator stencil arithmetic and the order-of-magnitude
+  difference between
+  \(D_x^2\) and the composed
+  \(D_x \circ D_x\) (the stride-2 phenomenon used in
+  \Cref{phase13-stride2}).
+\item
+  \textbf{Eigen project: \emph{Matrix and vector types}.} Permanent
+  URL:
+  \url{https://eigen.tuxfamily.org/dox/group__TutorialMatrixClass.html}.
+  Documents \passthrough{\lstinline!Eigen::Matrix3d!} and the
+  default-constructor behavior cited in
+  \passthrough{\lstinline!core/EigenAliases.hpp!}'s Doxygen block on
+  \passthrough{\lstinline!Mat3d!}.
+\end{itemize}
+
+Internal cross-references (do not satisfy the ``external'' minimum):
+
+\begin{itemize}
+\tightlist
+\item
+  \Cref{chap:dev:gradient-and-divergence} — Phase 2 scalar
+  \passthrough{\lstinline!gradient!} /
+  \passthrough{\lstinline!divergence!} surface and the original
+  stride-2-stencil note.
+\item
+  \Cref{chap:dev:higher-order-accuracy-stencils} — Phase 7
+  \passthrough{\lstinline!Order!} template parameter inherited by the
+  new overloads.
+\item
+  \Cref{chap:dev:higher-order-functional} — Phase 11 deferral
+  rationale that this phase mirrors for the contraction layer.
+\end{itemize}

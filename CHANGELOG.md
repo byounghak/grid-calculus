@@ -4,6 +4,101 @@ All notable changes to gridcalc are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## 0.13.0 — Phase 13: Vector and tensor fields
+
+### Added
+
+- **`gridcalc::core::Mat3d`** alias for `Eigen::Matrix3d` in
+  `core/EigenAliases.hpp`. Standard Eigen module — the unsupported
+  tensor module remains deferred. Doxygen documents the index
+  convention adopted by Phase 13's rank-2 gradient
+  (`M(i, j) = ∂_j v_i`, so the trace gives the divergence) and the
+  Eigen contract that the default constructor leaves coefficients
+  uninitialized.
+- **Rank-raising gradient overload** —
+  `diff::gradient(Field<Vec3d>) -> Field<Mat3d>`. Returns the
+  velocity-gradient tensor `M(i, j) = ∂_j v_i` at every grid point.
+  Built as a sibling overload to the Phase 2 scalar gradient with the
+  Phase 7 `Order` template parameter preserved (default `2`,
+  `4` available).
+- **Rank-lowering divergence overload** —
+  `diff::divergence(Field<Mat3d>) -> Field<Vec3d>`. Returns
+  `(div M)_i = ∂_j M(i, j)` (sum over the column / axis index, matching
+  the rank-2 gradient convention so that
+  `divergence(gradient(v))` is the vector Laplacian). Same
+  `Order` template parameter.
+- **`tensor/Contraction.hpp`** — three pointwise primitives in the new
+  `gridcalc::tensor` namespace: `trace(Field<Mat3d>)`,
+  `singleContract(Field<Mat3d>, Field<Mat3d>) -> Field<Mat3d>` (matrix
+  product), and `doubleContract(Field<Mat3d>, Field<Mat3d>) -> Field<double>`
+  (full contraction `A:B = A(i,j)B(i,j)`). All three are
+  fully-materialized; expression templates revisited in Phase 14.
+- **Vector-identity acceptance tests** (`test/vector_tensor_test.cpp`,
+  16 tests). Covers per-operator unit checks (linear-field exactness,
+  index convention, `Order=4` improvement) and three vector
+  identities: `HessianIsSymmetric` (the rank-raising restatement of
+  the roadmap's `∇×∇φ = 0` example), `TraceOfGradientEqualsDivergence`,
+  and `DivergenceOfGradientEqualsLaplacian` (compared against the
+  *analytical* vector Laplacian per the standing
+  divergence-of-gradient stride-2-stencil note from Phase 2).
+- **`Field<Mat3d>` instantiation coverage** (`field_test.cpp`, four
+  new tests): broadcast constructor, zero broadcast, write-then-read
+  round-trip, i-fastest layout preserved at the `Mat3d` granularity.
+- **User Guide chapter 13** — *Vector and tensor fields* —
+  `docs/user-guide/chapters/13-vector-tensor-fields.tex`. Walks the
+  new types and overloads, the index convention, the contraction
+  primitives, and the three identity tests. The legacy
+  `13-diamond-lattice.tex` placeholder (a Phase 11 renumber-residue
+  for Phase 15's diamond-lattice chapter) moves to
+  `15-diamond-lattice.tex`.
+- **Developer Note chapter 12** — *Vector and tensor fields* —
+  `docs/developer-note/chapters/12-vector-tensor-fields.tex` with the
+  standing five-section structure (Theory · Math derivation ·
+  Algorithm · Design decisions · References). Theory: continuum
+  rank-raising gradients and Schwarz's theorem. Math derivation:
+  proof of discrete partial-difference commutativity on a periodic
+  uniform grid, the trace=divergence pointwise-to-round-off
+  argument, and the stride-2 second-derivative analysis for
+  `divergence(gradient(v))`. Algorithm: file layout, loop structure
+  for the rank-2 gradient, and the contraction-primitive
+  implementation. Design decisions: the four AskUserQuestion
+  answers. References: Gurtin 1981, Holzapfel 2000, LeVeque 2007,
+  Eigen project documentation (all with permanent identifiers /
+  ISBNs).
+
+### Changed
+
+- **Version bumped to `0.13.0`.**
+- `docs/user-guide/main.tex` and `docs/developer-note/main.tex` —
+  add the new chapter `\input{...}` lines; legacy
+  `13-diamond-lattice.tex` reference replaced with
+  `15-diamond-lattice.tex` to free chapter slot 13 for the Phase 13
+  content. (Phase 14 will land `14-tensor-functional.tex` between
+  them.)
+
+### Notes
+
+- **No new public namespace pollution.** All new symbols live in
+  existing namespaces (`gridcalc::core`, `gridcalc::diff`) plus the
+  one new `gridcalc::tensor` namespace introduced by the new header.
+  The `\since` lint passes — every new public symbol carries a
+  `\since 0.13.0` tag.
+- **No new FD operators in the Phase 9 cross-check fixture.** The
+  Phase 9 fixture parameterizes over scalar-input FD operators; the
+  rank-raising variants are not (yet) in scope. May be addressed in a
+  Phase 14-or-later body of work.
+- **Phase 12's CH demo unchanged.** The new vector/tensor surface is
+  not consumed by Phase 12; Phase 14's elastic-energy worked example
+  is the first downstream user.
+
+### Tests
+
+- 243 tests pass on `clang-debug` (223 prior + 20 new — 4
+  `FieldMat3dTest` + 13 in `vector_tensor_test.cpp` + 3 identity
+  tests in the same file).
+- 167 expected on `clang-debug-nofft` (147 prior + 20 new — none of
+  the new tests use the spectral path).
+
 ## 0.12.0 — Phase 12: Cahn–Hilliard example end-to-end
 
 ### Added

@@ -1,0 +1,191 @@
+\chapter{Vector and tensor fields}
+\label{chap:vector-tensor-fields}
+
+\begin{quote}
+Spec dir:
+\passthrough{\lstinline!specs/2026-05-04-phase-13-vector-tensor-fields/!}.
+Version: \passthrough{\lstinline!0.13.0!}.
+\end{quote}
+
+\subsection{What this gives you}\label{phase13-what}
+
+\passthrough{\lstinline!Field<T>!} now instantiates with a rank-2
+tensor element, and the rank-raising / rank-lowering arithmetic
+identities work as expected. Three new public symbols:
+
+\begin{itemize}
+\tightlist
+\item
+  \passthrough{\lstinline!gridcalc::core::Mat3d!} — alias for
+  \passthrough{\lstinline!Eigen::Matrix3d!} (standard Eigen module).
+  Lives in
+  \passthrough{\lstinline!core/EigenAliases.hpp!} alongside
+  \passthrough{\lstinline!Vec3d!}.
+\item
+  \passthrough{\lstinline!diff::gradient(Field<Vec3d>) -> Field<Mat3d>!} —
+  rank-raising gradient with the convention
+  \(M(i, j) = \partial_j v_i\).
+\item
+  \passthrough{\lstinline!diff::divergence(Field<Mat3d>) -> Field<Vec3d>!} —
+  rank-lowering divergence with the matched convention
+  \((\mathrm{div}\,M)_i = \partial_j M(i, j)\).
+\end{itemize}
+
+Plus the contraction primitives in the new
+\passthrough{\lstinline!tensor/Contraction.hpp!}:
+
+\begin{itemize}
+\tightlist
+\item
+  \passthrough{\lstinline!tensor::trace(Field<Mat3d>) -> Field<double>!}
+\item
+  \passthrough{\lstinline!tensor::singleContract(Field<Mat3d>, Field<Mat3d>) -> Field<Mat3d>!}
+  — pointwise matrix product \((A \cdot B)(i,j) = A(i,k)\,B(k,j)\).
+\item
+  \passthrough{\lstinline!tensor::doubleContract(Field<Mat3d>, Field<Mat3d>) -> Field<double>!}
+  — pointwise full contraction \(A : B = A(i,j)\,B(i,j)\).
+\end{itemize}
+
+\textbf{Out of scope at Phase 13.}
+\passthrough{\lstinline!Field<Tensor3>!} and
+\passthrough{\lstinline!Field<Tensor4>!} (rank-3 and rank-4 tensor
+fields) are deferred to Phase 14, where the contraction
+expression-template work that motivates them lands together. The
+unsupported-Eigen-tensor-module portability question stays deferred.
+
+\subsection{Index conventions}\label{phase13-conventions}
+
+The rank-2 gradient stores
+\(M(i, j) = \partial_j v_i\): row index \(i\) selects the vector
+component being differentiated; column index \(j\) selects the
+derivative axis. Under this convention the trace recovers the
+divergence,
+\[
+\mathrm{tr}(M) = \partial_x v_x + \partial_y v_y + \partial_z v_z = \nabla\cdot v,
+\]
+and the matched rank-2 divergence
+\((\mathrm{div}\,M)_i = \partial_j M(i, j)\) gives the natural vector
+Laplacian under composition:
+\[
+\big(\mathrm{div}(\nabla v)\big)_i = \partial_j \partial_j v_i = (\nabla^2 v)_i.
+\]
+
+\subsection{API}\label{phase13-api}
+
+The Phase 2 scalar gradient and divergence keep their existing
+signatures unchanged; Phase 13 adds new overloads on
+\passthrough{\lstinline!Field<Vec3d>!} and
+\passthrough{\lstinline!Field<Mat3d>!} respectively. Both new
+overloads inherit the Phase 7
+\passthrough{\lstinline!Order!} template parameter (default
+\passthrough{\lstinline!2!}; \passthrough{\lstinline!4!}-th order
+available):
+
+\begin{lstlisting}[language={C++}]
+namespace gridcalc::diff {
+
+template <int Order = 2>
+core::Field<core::Mat3d> gradient(const core::Field<core::Vec3d>& field);  // new
+
+template <int Order = 2>
+core::Field<core::Vec3d> divergence(const core::Field<core::Mat3d>& mfield);  // new
+
+}  // namespace gridcalc::diff
+
+namespace gridcalc::tensor {
+
+core::Field<double>      trace(const core::Field<core::Mat3d>& mfield);
+core::Field<core::Mat3d> singleContract(const core::Field<core::Mat3d>& a,
+                                        const core::Field<core::Mat3d>& b);
+core::Field<double>      doubleContract(const core::Field<core::Mat3d>& a,
+                                        const core::Field<core::Mat3d>& b);
+
+}  // namespace gridcalc::tensor
+\end{lstlisting}
+
+\subsection{Worked example: three vector
+identities}\label{phase13-identities}
+
+The Phase 13 acceptance test
+(\href{../../../test/vector_tensor_test.cpp}{\passthrough{\lstinline!test/vector\_tensor\_test.cpp!}})
+verifies three identities programmatically.
+
+\subsubsection{1. Hessian symmetry
+(\(\nabla\times\nabla\phi = 0\))}\label{phase13-hessian}
+
+For smooth \(\phi\), the Hessian \(\nabla\nabla\phi\) is symmetric.
+Composed Phase 2 gradients realize the rank-raising version directly:
+
+\begin{lstlisting}[language={C++}]
+Field<double> phi(grid, [](double x, double y, double z) {
+    return std::sin(x) * std::cos(y) * std::sin(z);
+});
+auto H = gradient(gradient(phi));  // Field<Vec3d> -> Field<Mat3d>
+
+// Each H(i, j, k) is symmetric to round-off:
+EXPECT_NEAR(H(7, 11, 5)(0, 1), H(7, 11, 5)(1, 0), 1e-12);
+\end{lstlisting}
+
+The agreement is to round-off (not stencil-order tolerance) because
+the FD operators \(\partial_i\) and \(\partial_j\) commute on a
+periodic uniform grid.
+
+\subsubsection{2.
+\(\mathrm{tr}(\nabla v) = \nabla\cdot v\)}\label{phase13-trace}
+
+\begin{lstlisting}[language={C++}]
+auto v = sampleVectorField(grid, [](double x, double y, double z) {
+    return Vec3d(std::sin(x) * std::cos(y),
+                 std::sin(y) * std::cos(z),
+                 std::sin(z) * std::cos(x));
+});
+auto trace_grad_v = tensor::trace(diff::gradient(v));
+auto div_v        = diff::divergence(v);
+// trace_grad_v == div_v to round-off pointwise.
+\end{lstlisting}
+
+\subsubsection{3. \(\nabla\cdot(\nabla v) = \nabla^2
+v\)}\label{phase13-vec-laplacian}
+
+For the same \(v\), each Cartesian component depends on exactly two
+axes, so its scalar Laplacian sums two
+\(-\text{component}\) contributions and the vector Laplacian is
+\(\nabla^2 v = -2\,v\). The composition
+\passthrough{\lstinline!divergence(gradient(v))!} is a stride-2
+second-derivative stencil (the same composed-stencil phenomenon
+documented for \passthrough{\lstinline!divergence(gradient(\(\psi\)))!} versus
+\passthrough{\lstinline!laplacian(\(\psi\))!} in Phase 2's note); it converges
+to the analytical \(\nabla^2 v\) at \(\mathcal{O}(h^2)\) but with a
+different leading-error constant than
+\passthrough{\lstinline!diff::laplacian!} applied componentwise. The
+test checks the rate against the closed-form
+\(-2\,v\), not against a discrete componentwise Laplacian.
+
+\subsection{What this does \emph{not} do}\label{phase13-not-do}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Rank-3 / rank-4 tensor fields.} Deferred to Phase 14.
+\item
+  \textbf{Expression-template contraction layer.} Deferred to Phase 14
+  alongside the
+  \passthrough{\lstinline!func::evaluate!}-over-tensor-fields surface
+  that motivates it.
+\item
+  \textbf{Explicit \texttt{curl} operator.} The
+  \passthrough{\lstinline!gradient(gradient(phi))!}-symmetry test
+  discharges the
+  \(\nabla\times\nabla\phi = 0\) identity in rank-raising
+  vocabulary; an explicit
+  \passthrough{\lstinline!curl!} (rank-1 \(\to\) rank-1) is not on
+  the roadmap and is not added speculatively.
+\item
+  \textbf{Vector / tensor spectral cross-check.} The Phase 9 fixture
+  parameterizes over scalar-input FD operators; the rank-raising
+  variants are not (yet) in its scope.
+\end{itemize}
+
+For the construction of the manufactured solutions and the rate
+arguments, see the ``Vector and tensor fields'' chapter of the
+Developer Note.
