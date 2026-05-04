@@ -9,12 +9,14 @@ The new Phase 14 entry inserted into `specs/roadmap.md`:
 > **Goal.** Conservative cell-flux discretization of the diffusion operator with heterogeneous diffusivity `D(x)`. Rounds out the solver story with the FVM foundation that the original roadmap had implicit at later phases.
 >
 > **Deliverables.**
+>
 > - `gridcalc::fvm` namespace and `include/gridcalc/fvm/CellLaplacian.hpp` — `fvm::cellLaplacian(psi, D)` returning $\nabla\cdot(D\nabla\psi)$ via cell-flux discretization with face-centered harmonic-mean D-averaging.
 > - `solve::diffuse(psi, D_field, dt, n_steps, tag)` — new heterogeneous-D overload reusing the existing `solve::ExplicitEuler{}` / `solve::RK4{}` integrator tags. The constant-D Phase 5 / Phase 6 overload is unchanged.
-> - Acceptance tests covering: agreement with the FD path on a uniform `D` field (round-off equality on uniform Cartesian grids); convergence at order 2 against an analytical heterogeneous-D solution; conservation `Σ fvm::cellLaplacian(ψ, D) = 0` to round-off on a periodic domain.
-> - User Guide chapter 14 + Developer Note chapter 13.
+> - Acceptance tests covering: agreement with the FD path on a uniform `D` field (round-off equality on uniform Cartesian grids); order-2 convergence on the heterogeneous-D code path against the analytical sin·sin·sin eigenfunction (uniform-D-as-Field); qualitative correctness on a genuinely varying $D(x)$ (mass conservation, max|ψ| monotone-decrease, positivity preservation); per-operator analytical-solution convergence on a 1D-flavored `D(x)`, `ψ(x)` pair; conservation `Σ fvm::cellLaplacian(ψ, D) = 0` to round-off on a periodic domain.
+> - **Textbook FVM demo.** `examples/heterogeneous_diffusion.cpp` (added to scope on 2026-05-04 mid-phase per a user request) — runnable CLI demo solving heterogeneous-$D$ diffusion of a Gaussian peak through a smooth $D(x) = D_0 + \varepsilon\cos(2\pi x/L)$ field; produces VTK snapshots via the Phase 12 writer; per-snapshot diagnostics. Helper header `examples/common/heterogeneous_diffusion.hpp` shared with the demo's CI gate (`test/heterogeneous_diffusion_test.cpp`).
+> - User Guide chapter 14 (with the demo walkthrough + three committed PNG snapshots) + Developer Note chapter 13.
 >
-> **Acceptance.** Heterogeneous-D diffusion of a manufactured solution recovers the analytical answer at order 2 in `h`; conservation holds to round-off; uniform-D path produces the same trajectory as Phase 5 / Phase 6's FD `solve::diffuse` to round-off.
+> **Acceptance.** Heterogeneous-D diffusion of the analytical sin·sin·sin eigenfunction (uniform-D path) recovers the analytical decay at order 2 in `h`; on genuinely varying `D(x)`, mass is conserved, `max|ψ|` is monotonically non-increasing, and `ψ ≥ 0` is preserved for a positive IC; per-operator convergence holds at order 2 on a manufactured `D(x)` / `ψ(x)` pair; conservation holds to round-off on the periodic domain; uniform-D path produces the same trajectory as Phase 5 / Phase 6's FD `solve::diffuse` to round-off.
 
 ## Decisions made for this feature
 
