@@ -1,6 +1,285 @@
 \chapter{Gradient and divergence}
-\label{chap:dev-gradient-divergence}
+\label{chap:dev:gradient-and-divergence}
 
-\textit{Absorbed from
-\path{docs/developer-note/notes/phase-2-gradient-divergence.md} in Phase
-10 Group 4. Placeholder until migrated.}
+\begin{quote}
+Phase metadata. Spec dir:
+\passthrough{\lstinline!specs/2026-05-02-phase-2-gradient-divergence/!}.
+Implements \passthrough{\lstinline!diff::gradient!},
+\passthrough{\lstinline!diff::divergence!},
+\passthrough{\lstinline!stencil::FirstDerivative<2>!},
+\passthrough{\lstinline!core/EigenAliases.hpp!}. Version target:
+\passthrough{\lstinline!0.2.0!}.
+
+\emph{This Developer Note was written retroactively after Phase 4 (see
+specs/STATUS.md ``Decisions worth knowing'').}
+\end{quote}
+
+\subsection{1. Theory}\label{theory}
+
+Phase 2 adds the \textbf{first-order vector operators} to the periodic
+Cartesian setting from Phase 1. For a scalar field
+\(\psi : \Omega \to \mathbb{R}\):
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Gradient:}
+  \(\nabla\psi = (\partial_x \psi,\, \partial_y \psi,\, \partial_z \psi)\),
+  a vector field.
+\item
+  \textbf{Divergence:}
+  \(\nabla \cdot \mathbf{V} = \partial_x V_x + \partial_y V_y + \partial_z V_z\),
+  a scalar field.
+\end{itemize}
+
+Both decompose into independent 1D first-derivative operators along each
+Cartesian axis, mirroring the Cartesian decomposition Phase 1 used for
+the Laplacian. The key new ingredient is a \textbf{first-derivative
+central-difference stencil}, sibling to the second-derivative table that
+already existed.
+
+A small but consequential observation: composing first-derivatives gives
+an effective \textbf{stride-2 second-derivative stencil}, \emph{not} the
+3-point stencil that \passthrough{\lstinline!laplacian!} uses.
+Concretely,
+
+\[
+(D_1 \circ D_1)f(x_i) \;=\; \frac{D_1 f(x_{i+1}) - D_1 f(x_{i-1})}{2h} \;=\; \frac{f(x_{i+2}) - 2 f(x_i) + f(x_{i-2})}{4 h^2},
+\]
+
+while
+
+\[
+D_2 f(x_i) \;=\; \frac{f(x_{i-1}) - 2 f(x_i) + f(x_{i+1})}{h^2}.
+\]
+
+Both converge to \(\partial_x^2 f\) as \(h \to 0\), but at finite \(h\)
+they have \textbf{different leading-order constants}. The Phase 2
+round-trip test
+\passthrough{\lstinline!DivergenceTest.RoundTripWithGradientMatchesLaplacian!}
+therefore compares \passthrough{\lstinline!divergence(gradient(ψ))!} to
+the \emph{analytical} Laplacian, not to
+\passthrough{\lstinline!laplacian(ψ)!}.
+
+\subsection{2. Math derivation}\label{math-derivation}
+
+\subsubsection{1D first-derivative central-difference
+stencil}\label{d-first-derivative-central-difference-stencil}
+
+Subtracting Taylor expansions:
+
+\[
+f(x + h) - f(x - h) \;=\; 2 h f'(x) + \tfrac{h^3}{3} f'''(x) + O(h^5).
+\]
+
+Dividing by \(2h\):
+
+\[
+\partial_x f(x) \;\approx\; \frac{f(x + h) - f(x - h)}{2 h}
+\;=\; f'(x) + \tfrac{h^2}{6} f'''(x) + O(h^4),
+\]
+
+with truncation error \(\tfrac{h^2}{6} f'''(x)\). The 3-element table
+\passthrough{\lstinline!stencil::FirstDerivative<2>::\{offsets, weights\}!}
+encodes weights \(\{-\tfrac{1}{2},\, 0,\, +\tfrac{1}{2}\}\) unscaled;
+the consumer multiplies by \(1/h\). Phase 7 adds the
+\passthrough{\lstinline!Order = 4!} specialization alongside
+\passthrough{\lstinline!Coefficients<4>!}.
+
+\subsubsection{Discrete eigenvalue on a single
+trig}\label{discrete-eigenvalue-on-a-single-trig}
+
+For \(\psi(x) = \sin(k x)\) sampled on the periodic grid:
+
+\[
+\frac{\sin(k(x + h)) - \sin(k(x - h))}{2 h} \;=\; \frac{2 \cos(k x)\,\sin(k h)}{2 h} \;=\; \frac{\sin(k h)}{h} \cos(k x).
+\]
+
+So the discrete first-derivative operator has eigenvalue
+\(\tilde{k} = \sin(k h)/h\) on the trig basis function, vs the
+continuous \(k\). Taylor: \(\sin(k h)/h = k - k^3 h^2 / 6 + O(h^4)\), so
+the \textbf{relative error} is \(-k^2 h^2 / 6 + O(h^4)\). At \(N = 32\),
+\(h = 2\pi/32 \approx 0.196\), \(k = 1\): relative error
+\(\approx -0.64\%\). This is the bound the
+\passthrough{\lstinline!GradientTest.RecoversTrigGradient!} test relaxes
+to \passthrough{\lstinline!1.5e-2!} for headroom.
+
+\subsubsection{3D gradient and divergence on Cartesian
+coordinates}\label{d-gradient-and-divergence-on-cartesian-coordinates}
+
+Apply \passthrough{\lstinline!FirstDerivative<2>!} along each axis
+independently:
+
+\[
+(\nabla_h \psi)_{ijk} \;=\; \begin{pmatrix}
+\frac{\psi_{i+1, j, k} - \psi_{i-1, j, k}}{2 h_x} \\[4pt]
+\frac{\psi_{i, j+1, k} - \psi_{i, j-1, k}}{2 h_y} \\[4pt]
+\frac{\psi_{i, j, k+1} - \psi_{i, j, k-1}}{2 h_z}
+\end{pmatrix},
+\qquad
+(\nabla_h \cdot \mathbf{V})_{ijk} \;=\; \sum_{a \in \{x,y,z\}} \frac{V_{a,\,\text{shift}(+\hat{a})} - V_{a,\,\text{shift}(-\hat{a})}}{2 h_a}.
+\]
+
+Each per-axis term is independent; each inherits the 1D truncation error
+\(\tfrac{h_a^2}{6} \partial_a^3 \psi\) derived above.
+
+\subsubsection{\texorpdfstring{Composition:
+\(\nabla_h \cdot \nabla_h \psi\) vs
+\(\nabla^2_h \psi\)}{Composition: \textbackslash nabla\_h \textbackslash cdot \textbackslash nabla\_h \textbackslash psi vs \textbackslash nabla\^{}2\_h \textbackslash psi}}\label{composition-nabla_h-cdot-nabla_h-psi-vs-nabla2_h-psi}
+
+Composing the gradient and divergence stencils yields a \textbf{stride-2
+3-point stencil} along each axis:
+
+\[
+\bigl[(\nabla_h \cdot \nabla_h)\psi\bigr]_{ijk} \;=\; \sum_a \frac{\psi_{ijk + 2 \hat{a}} - 2\psi_{ijk} + \psi_{ijk - 2 \hat{a}}}{(2 h_a)^2}.
+\]
+
+Per axis, the discrete eigenvalue on \(\sin(k_a x_a)\) is
+
+\[
+-\frac{2(1 - \cos(2 k_a h_a))}{(2 h_a)^2} \;=\; -\frac{\sin^2(k_a h_a)}{h_a^2} \;=\; -k_a^2 + \frac{k_a^4 h_a^2}{3} + O(h_a^4),
+\]
+
+while the direct 3-point Laplacian of Phase 1 has eigenvalue (per axis)
+
+\[
+-\frac{2(1 - \cos(k_a h_a))}{h_a^2} \;=\; -k_a^2 + \frac{k_a^4 h_a^2}{12} + O(h_a^4).
+\]
+
+Both are \(O(h^2)\) and converge to the analytical eigenvalue
+\(-k_a^2\), but the \textbf{leading constants differ} --- the composed
+operator's error is 4× larger than the direct Laplacian's. Hence the
+round-trip test compares to the analytical eigenvalue:
+\passthrough{\lstinline!divergence(gradient(ψ))!} converges to
+\(\nabla^2 \psi\), but at finite \(h\) it does \emph{not} equal
+\passthrough{\lstinline!laplacian(ψ)!}.
+
+\subsection{3. Algorithm}\label{algorithm}
+
+\subsubsection{\texorpdfstring{\texttt{FirstDerivative\textless{}2\textgreater{}}
+table}{FirstDerivative\textless2\textgreater{} table}}\label{firstderivative2-table}
+
+\href{../../../include/gridcalc/stencil/FirstDerivative.hpp}{\passthrough{\lstinline!include/gridcalc/stencil/FirstDerivative.hpp!}}
+follows the same primary-undefined + \passthrough{\lstinline!Order = 2!}
+specialization pattern as Phase 1's
+\passthrough{\lstinline!Coefficients<Order>!}. Weights are
+\passthrough{\lstinline!\{-0.5, 0, 0.5\}!} and the
+\passthrough{\lstinline!weights[1] = 0!} is included so the loop body
+can be the same generic ``sum weights × shifted samples'' structure as
+the Laplacian's.
+
+\subsubsection{\texorpdfstring{\texttt{gradient}}{gradient}}\label{gradient}
+
+\href{../../../include/gridcalc/diff/Gradient.hpp}{\passthrough{\lstinline!include/gridcalc/diff/Gradient.hpp!}}
+allocates a fresh \passthrough{\lstinline!Field<Vec3d>!} of the same
+shape and loops i-fastest. At each point, it accumulates three
+independent \passthrough{\lstinline!FirstDerivative<2>!}-weighted sums
+(one per axis) into three doubles, then packs them as
+\passthrough{\lstinline!Vec3d(dx*inv\_hx, dy*inv\_hy, dz*inv\_hz)!}.
+Periodic wrap is delegated to the input
+\passthrough{\lstinline!Field<double>!}'s
+\passthrough{\lstinline!IndexPolicy::Periodic!} via
+\passthrough{\lstinline!operator()!}.
+
+\subsubsection{\texorpdfstring{\texttt{divergence}}{divergence}}\label{divergence}
+
+\href{../../../include/gridcalc/diff/Divergence.hpp}{\passthrough{\lstinline!include/gridcalc/diff/Divergence.hpp!}}
+allocates a fresh \passthrough{\lstinline!Field<double>!} and at each
+point reads only the matching component from the shifted
+\passthrough{\lstinline!Field<Vec3d>!}:
+\passthrough{\lstinline!V(i+s, j, k)(0)!} for the x-derivative,
+\passthrough{\lstinline!V(i, j+s, k)(1)!} for the y-derivative,
+\passthrough{\lstinline!V(i, j, k+s)(2)!} for the z-derivative. The
+cross-component reads (e.g., \passthrough{\lstinline!V(i+s, j, k)(1)!})
+that a generic Vec3d-stencil would touch are intentionally absent ---
+divergence is component-along-axis only.
+
+Algorithmic complexity for both is \(O(N_x N_y N_z)\). Allocation cost:
+gradient creates a \passthrough{\lstinline!Field<Vec3d>!} of
+\(24 N_x N_y N_z\) bytes (3 doubles per point) plus a fresh
+\passthrough{\lstinline!Field<double>!} for the result of any follow-on
+divergence; divergence creates a \passthrough{\lstinline!Field<double>!}
+for the output (\(8 N_x N_y N_z\) bytes).
+
+\subsection{4. Design decisions}\label{design-decisions}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Gradient returns \passthrough{\lstinline!Field<Vec3d>!}, not
+  three \passthrough{\lstinline!Field<double>!}s.} Single
+  field-of-vectors matches the roadmap.
+  \passthrough{\lstinline!Field<T>!} is templated from Phase 1, so this
+  is a one-line return --- no wrapper struct, no helper. Per-component
+  decomposition can be added later as an additive helper without
+  changing the canonical API. See
+  \href{../../../specs/2026-05-02-phase-2-gradient-divergence/requirements.md}{Phase
+  2 requirements.md}.
+\item
+  \textbf{\passthrough{\lstinline!Vec3d!} lives in
+  \passthrough{\lstinline!core/EigenAliases.hpp!}.} Phase 2 lifted the
+  alias out of \passthrough{\lstinline!core/Grid.hpp!} (where Phase 1
+  declared it) once a second operator needed it. The fully-qualified
+  name \passthrough{\lstinline!gridcalc::core::Vec3d!} is unchanged.
+  Future tensor / matrix typedefs (\passthrough{\lstinline!Mat3d!},
+  \passthrough{\lstinline!Tensor3!} in Phase 13/14) will land in this
+  same header.
+\item
+  \textbf{Divergence accepts a single
+  \passthrough{\lstinline!Field<Vec3d>!}.} Symmetric with the gradient
+  return; no per-component overload at Phase 2. A 3-component overload
+  would just duplicate the implementation; if a downstream caller needs
+  it, it can be added then.
+\item
+  \textbf{\passthrough{\lstinline!stencil::FirstDerivative<Order>!} is a
+  sibling template, not part of
+  \passthrough{\lstinline!Coefficients<Order>!}.} Phase 1's
+  \passthrough{\lstinline!Coefficients<Order>!} is documented as the
+  \textbf{second-derivative} table; reusing the name for
+  first-derivative coefficients would silently change semantics for
+  Phase 1 callers and break the public contract. A unifying redesign
+  (e.g., \passthrough{\lstinline!Coefficients<Derivative, Order>!}) is
+  deferred to Phase 7 when both tables gain
+  \passthrough{\lstinline!Order = 4!} specializations.
+\item
+  \textbf{Round-trip identity test compares to the analytical Laplacian,
+  not the discrete one.} As §2 derives, \(D_1 \circ D_1 \ne D_2\) at
+  finite \(h\). This is a feature of the Phase 2 design that is easy to
+  misread as a bug; the test name
+  \passthrough{\lstinline!RoundTripWithGradientMatchesLaplacian!} is
+  about the continuum limit, not the discrete one.
+\end{itemize}
+
+\subsection{5. References}\label{references}
+
+{[}1{]} LeVeque, R. J. (2007). \emph{Finite Difference Methods for
+Ordinary and Partial Differential Equations}. SIAM. ISBN
+978-0-89871-783-9. \url{https://doi.org/10.1137/1.9780898717839}. §1.2
+covers first-derivative central differences and the truncation analysis
+used in §2; §1.5 discusses the multi-stencil compositions that motivate
+the \(D_1 \circ D_1 \ne D_2\) analysis.
+
+{[}2{]} Fornberg, B. (1988). ``Generation of Finite Difference Formulas
+on Arbitrarily Spaced Grids.'' \emph{Mathematics of Computation},
+51(184), 699--706.
+\url{https://doi.org/10.1090/S0025-5718-1988-0935077-0}. The canonical
+reference for deriving central-difference weights at arbitrary order;
+the \passthrough{\lstinline!Order = 4!} extension in Phase 7 will use
+this algorithm directly.
+
+{[}3{]} Trefethen, L. N. (2000). \emph{Spectral Methods in MATLAB}.
+SIAM. \url{https://doi.org/10.1137/1.9780898719598}. §3 on the
+relationship between discrete first-derivatives and the trigonometric
+eigenvalue \(\sin(k h)/h\) used in §2.
+
+{[}4{]} Eigen 3 documentation: \passthrough{\lstinline!Eigen::Vector3d!}
+and uninitialized default-construction.
+\url{https://eigen.tuxfamily.org/dox/group__TutorialMatrixClass.html}
+(permanent URL). Documents that \passthrough{\lstinline!Eigen::Matrix!}
+default-constructed fixed-size objects leave their coefficients
+uninitialized in release builds; this is why Phase 2's tests
+broadcast-init \passthrough{\lstinline!Field<Vec3d>!} with
+\passthrough{\lstinline!Vec3d::Zero()!} rather than relying on the
+\passthrough{\lstinline!Field(grid)!} constructor's documented
+``zero-initialized'' promise (which holds for arithmetic
+\passthrough{\lstinline!T!} but not for Eigen types).

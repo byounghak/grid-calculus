@@ -1,5 +1,145 @@
 \chapter{Grid and Laplacian}
 \label{chap:grid-and-laplacian}
 
-\textit{Absorbed from \path{docs/user-guide/notes/phase-1-laplacian.md} in
-Phase 10 Group 3. Placeholder until migrated.}
+\begin{quote}
+Spec dir: \passthrough{\lstinline!specs/2026-05-01-phase-1-laplacian/!}.
+Version: \passthrough{\lstinline!0.1.0!}. \emph{Note: this note was
+written retroactively after Phase 4, so the ``current PR'' framing of
+later notes is absent here.}
+\end{quote}
+
+\subsection{What this gives you}\label{what-this-gives-you}
+
+The structural foundation of the library: a Cartesian-orthogonal
+\textbf{sampling grid}, a \textbf{periodic scalar field} built on it,
+and a \textbf{2nd-order Laplacian} operator. Everything later in the
+roadmap (gradient, divergence, integration, functional evaluation,
+\ldots) sits on top of these three pieces.
+
+\subsection{API}\label{api}
+
+Headers:
+\href{../../../include/gridcalc/core/Grid.hpp}{\passthrough{\lstinline!include/gridcalc/core/Grid.hpp!}},
+\href{../../../include/gridcalc/core/Field.hpp}{\passthrough{\lstinline!include/gridcalc/core/Field.hpp!}},
+\href{../../../include/gridcalc/core/IndexPolicy.hpp}{\passthrough{\lstinline!include/gridcalc/core/IndexPolicy.hpp!}},
+\href{../../../include/gridcalc/stencil/CentralDifference.hpp}{\passthrough{\lstinline!include/gridcalc/stencil/CentralDifference.hpp!}},
+\href{../../../include/gridcalc/diff/Laplacian.hpp}{\passthrough{\lstinline!include/gridcalc/diff/Laplacian.hpp!}}.
+
+\begin{lstlisting}[language={C++}]
+namespace gridcalc::core {
+
+class Grid {
+ public:
+  Grid(int Nx, int Ny, int Nz, const Vec3d& cell_size);
+  int          getNx() const noexcept;
+  int          getNy() const noexcept;
+  int          getNz() const noexcept;
+  const Vec3d& getCellSize() const noexcept;
+  double       getCellVolume() const noexcept;
+  std::size_t  getSize() const noexcept;
+  std::size_t  getLinearIndex(int i, int j, int k) const noexcept;
+};
+
+template <class T, class Policy = IndexPolicy::Periodic>
+class Field {
+ public:
+  explicit Field(const Grid& grid);                // zero-initialized
+  Field(const Grid& grid, const T& value);         // broadcast
+  template <class F> Field(const Grid& grid, F&& f);  // sample f(x, y, z)
+
+  T&       operator()(int i, int j, int k) noexcept;     // wraps via Policy
+  const T& operator()(int i, int j, int k) const noexcept;
+
+  const Grid&  getGrid() const noexcept;
+  std::size_t  getSize() const noexcept;
+  T*           data() noexcept;
+  const T*     data() const noexcept;
+  T*           begin() noexcept;  T* end() noexcept;
+};
+
+namespace IndexPolicy {
+  struct Periodic { static constexpr int wrap(int i, int N) noexcept; };
+}
+
+}  // namespace gridcalc::core
+
+namespace gridcalc::diff {
+core::Field<double> laplacian(const core::Field<double>& field);
+}
+\end{lstlisting}
+
+\subsubsection{Storage layout}\label{storage-layout}
+
+\passthrough{\lstinline!Field<T>!} storage is \textbf{i-fastest}: the
+linear offset for \passthrough{\lstinline!(i, j, k)!} is
+\passthrough{\lstinline!i + Nx * (j + Ny * k)!}. This matches the Eigen
+/ FFT convention and is part of the public contract from Phase 1 forward
+--- Phase 9 (spectral verification) and Phase 20 (benchmarks) both rely
+on it.
+
+\subsubsection{Index policy}\label{index-policy}
+
+\passthrough{\lstinline!Field<T, Policy>!} defaults to
+\passthrough{\lstinline!IndexPolicy::Periodic!}, which wraps
+out-of-range indices modulo \passthrough{\lstinline!N!}.
+\passthrough{\lstinline!field(-1, j, k)!} returns
+\passthrough{\lstinline!field(Nx - 1, j, k)!}.
+\passthrough{\lstinline!Dirichlet!} and
+\passthrough{\lstinline!Neumann!} policies arrive in Phase 18; the
+policy template parameter is the only piece of forward-looking design
+admitted at Phase 1.
+
+\subsection{Worked example}\label{worked-example}
+
+Recover the Laplacian eigenvalue of a trig product:
+
+\begin{lstlisting}[language={C++}]
+#include <cmath>
+#include <gridcalc/core/Field.hpp>
+#include <gridcalc/core/Grid.hpp>
+#include <gridcalc/diff/Laplacian.hpp>
+
+using gridcalc::core::Field;
+using gridcalc::core::Grid;
+using gridcalc::core::Vec3d;
+using gridcalc::diff::laplacian;
+
+constexpr double kPi = 3.14159265358979323846;
+
+const int N = 32;
+const double L = 2.0 * kPi;
+const double h = L / N;
+
+Grid grid(N, N, N, Vec3d(h, h, h));
+Field<double> psi(grid, [](double x, double y, double z) {
+  return std::sin(x) * std::sin(y) * std::sin(z);
+});
+
+Field<double> lap = laplacian(psi);
+// lap ~= -3 * psi  (since the analytical Laplacian eigenvalue is -3)
+// Relative max-norm error ~ k^4 h^2 / (12 k^2) ~ h^2 / 12 ~ 3e-3 at N = 32.
+\end{lstlisting}
+
+\subsection{\texorpdfstring{What this does \emph{not} do
+(yet)}{What this does not do (yet)}}\label{what-this-does-not-do-yet}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Periodic boundary only.} Dirichlet / Neumann policies arrive
+  in Phase 18.
+\item
+  \textbf{2nd-order accuracy only.} Higher-order accuracy
+  (\passthrough{\lstinline!Order = 4!}) on the same operator arrives in
+  Phase 7.
+\item
+  \textbf{Scalar \passthrough{\lstinline!T = double!} only in practice.}
+  Although \passthrough{\lstinline!Field<T>!} is templated, only
+  \passthrough{\lstinline!double!} is exercised at Phase 1.
+  \passthrough{\lstinline!Field<Vec3d>!} arrives in Phase 2's gradient
+  output.
+\end{itemize}
+
+For the why-this-stencil-converges background --- derivation, error
+analysis, references --- see
+\href{../../developer-note/notes/phase-1-laplacian.md}{\passthrough{\lstinline!docs/developer-note/notes/phase-1-laplacian.md!}}.
