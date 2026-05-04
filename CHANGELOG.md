@@ -4,6 +4,57 @@ All notable changes to gridcalc are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## 0.11.0 — Phase 11: Functional with up-to-4th-order gradients
+
+### Added
+
+- **`gridcalc::func::evaluate` 4-argument arity.** New SFINAE-detected
+  branch at the head of the dispatch ladder accepts callables of the
+  form `f(double psi, const Vec3d& grad_psi, double lap_psi, double
+  biharm_psi)`, where `biharm_psi` is the contracted scalar
+  $\nabla^4\psi$ as returned by `diff::biharmonic` (Phase 8). When this
+  arity matches, `evaluate` materializes `gradient(psi)`,
+  `laplacian(psi)`, and `biharmonic(psi)` in addition to the integrand
+  field, then forms the integrand pointwise and reduces with
+  `func::integrate`. Total supported arities: 1, 2, 3, 4.
+- **PFC functional test suite** (`test/pfc_functional_test.cpp`,
+  five tests): `HandComputedAtN64` (roadmap acceptance — recovers
+  $F_{\text{ref}} = 2.05546875\,\pi^3$ within 2% relative at `N=64`
+  for `psi = sin(x)sin(y)sin(z)`, `q0=1`, `eps=0.1`),
+  `SecondOrderConvergence` (`O(h²)` slope on `N ∈ {16, 32, 64}`),
+  `PsiOnlyArityStillWorks` and `GinzburgLandauStillWorks`
+  (regression checks confirming the 1-arg and 3-arg dispatch branches
+  still resolve correctly under the longest-arity-wins ordering), and
+  `SpectralCrossCheck` (computes the same PFC integrand using
+  Phase 9's `spectral::laplacian` / `spectral::biharmonic` and asserts
+  agreement with the analytical reference to better than `1e-12`
+  relative; `#ifdef`-guarded by `GRIDCALC_USE_FFT`).
+- **User Guide chapter 11** — *Higher-order functionals* —
+  `docs/user-guide/chapters/11-higher-order-functional.tex`. Walks
+  the new arity, the PFC worked example end-to-end (parameters →
+  integrand → analytical reference → calling code), and the spectral
+  cross-check pattern. Renumbers the placeholder chapters: previous
+  chapter 11 (Cahn–Hilliard) becomes chapter 12; previous chapter 12
+  (diamond-lattice) becomes chapter 13.
+- **Developer Note chapter 10** — *Higher-order functionals* —
+  `docs/developer-note/chapters/10-higher-order-functional.tex`. The
+  five-section structure: Theory (PFC functional and the
+  Swift–Hohenberg lineage of $(q_0^2+\nabla^2)^2$); Math derivation
+  (closed-form $F_{\text{ref}}$, leading-order discrete error
+  $\sim h^2$); Algorithm (dispatch ladder extension, eager
+  materialization, spectral cross-check assembly); Design decisions
+  (contracted-scalar-only argument shape, deferral of contraction
+  expression templates to Phase 14, hand-computed + spectral
+  verification); References (Elder & Grant 2004, Provatas & Elder
+  2010, Boyd 2001, Swift & Hohenberg 1977).
+
+### Changed
+
+- `func::evaluate`'s `\since` tag now reads `0.4.0 (function); 0.11.0
+  (4-arg arity)`. The `\file`-level brief is updated to reflect the
+  $\nabla^4\psi$ argument; the `static_assert` error message
+  enumerates all four supported arities.
+
 ## 0.10.0 — Phase 10: Documentation infrastructure
 
 ### Added
