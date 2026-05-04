@@ -37,7 +37,7 @@ jobs:
             deps-${{ matrix.compiler }}-
 
       - name: Configure
-        run: cmake --preset ${{ matrix.compiler }}-debug -DGRIDCALC_WARNINGS_AS_ERRORS=ON
+        run: cmake --preset ${{ matrix.compiler }}-debug -DGRIDCALC_WARNINGS_AS_ERRORS=ON -DGRIDCALC_BUILD_EXAMPLES=ON
 
       - name: Build
         run: cmake --build --preset ${{ matrix.compiler }}-debug
