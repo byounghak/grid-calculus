@@ -63,7 +63,10 @@ jobs:
             texlive-latex-extra \
             texlive-fonts-recommended \
             texlive-pictures \
+            texlive-science \
             lmodern
+          # texlive-science provides listofitems.sty (transitively pulled in by
+          # Doxygen-generated doxygen.sty via stackengine).
 
       - name: Configure (docs only)
         run: |
@@ -96,11 +99,15 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Install Doxygen + Python
+      - name: Install Doxygen + Python + latexmk
         run: |
           sudo apt-get update
+          # latexmk is installed only because docs/CMakeLists.txt's
+          # find_program(LATEXMK_EXECUTABLE REQUIRED) probes for it during
+          # configure even when only the Doxygen target will run. The
+          # docs-build job (above) is the one that actually invokes it.
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build doxygen graphviz python3
+            cmake ninja-build doxygen graphviz python3 latexmk
 
       - name: Configure (docs only, just enough to drive Doxygen)
         run: |
