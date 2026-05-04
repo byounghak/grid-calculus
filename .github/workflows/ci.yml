@@ -45,30 +45,84 @@ jobs:
       - name: Test
         run: ctest --preset ${{ matrix.compiler }}-debug
 
-  render-docs:
-    name: Render Doc PDFs
+  docs-build:
+    name: Build doc PDFs (Doxygen + LaTeX)
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Install pandoc + texlive (xelatex)
+      - name: Install Doxygen, Graphviz, TeX Live
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            pandoc \
-            texlive-xetex \
+            cmake ninja-build \
+            doxygen graphviz \
+            latexmk \
             texlive-latex-recommended \
             texlive-latex-extra \
             texlive-fonts-recommended \
+            texlive-pictures \
             lmodern
 
-      - name: Render User Guide and Developer Note
-        run: ./scripts/render-docs.sh
+      - name: Configure (docs only)
+        run: |
+          cmake -B build/docs \
+                -DGRIDCALC_BUILD_DOCS=ON \
+                -DGRIDCALC_BUILD_TESTS=OFF \
+                -G Ninja
 
-      - name: Upload PDFs
+      - name: Build all docs targets
+        run: cmake --build build/docs --target gridcalc-docs-all
+
+      - name: Stage artifact bundle
+        run: |
+          mkdir -p build/docs-artifacts
+          cp build/docs/docs/user-guide/main.pdf      build/docs-artifacts/user-guide.pdf
+          cp build/docs/docs/developer-note/main.pdf  build/docs-artifacts/developer-note.pdf
+          tar -C build/docs/docs -czf build/docs-artifacts/doxygen.tar.gz doxygen
+
+      - name: Upload PDFs + Doxygen
         uses: actions/upload-artifact@v4
         with:
           name: gridcalc-docs-pdfs
-          path: build/docs/*.pdf
+          path: build/docs-artifacts/
           if-no-files-found: error
+
+  docs-lint:
+    name: Documentation lint (Doxygen warnings + \since tags)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Doxygen + Python
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build doxygen graphviz python3
+
+      - name: Configure (docs only, just enough to drive Doxygen)
+        run: |
+          cmake -B build/lint \
+                -DGRIDCALC_BUILD_DOCS=ON \
+                -DGRIDCALC_BUILD_TESTS=OFF \
+                -G Ninja
+
+      - name: Run Doxygen
+        run: cmake --build build/lint --target gridcalc-docs-doxygen
+
+      - name: Fail on undocumented public symbols
+        run: |
+          # Allow benign math-mode warnings (e.g., `\partial`, `\nabla` inside
+          # `$...$` blocks); fail on any other warning. The list of allowed
+          # patterns is intentionally narrow.
+          if grep -v "Found unknown command" build/lint/docs/doxygen-warnings.log | grep -q .; then
+            echo "Doxygen produced non-math warnings:"
+            grep -v "Found unknown command" build/lint/docs/doxygen-warnings.log
+            exit 1
+          fi
+          echo "Doxygen lint clean (math warnings only)."
+
+      - name: Run \since tag check
+        run: python3 scripts/check-since.py include/gridcalc/
