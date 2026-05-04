@@ -1,0 +1,216 @@
+\chapter{Finite volume method (FVM)}
+\label{chap:finite-volume-method}
+
+\begin{quote}
+Spec dir:
+\passthrough{\lstinline!specs/2026-05-04-phase-14-finite-volume-method/!}.
+Version: \passthrough{\lstinline!0.14.0!}.
+\end{quote}
+
+\subsection{What this gives you}\label{phase14-what}
+
+A conservative cell-flux discretization of the diffusion operator with
+\textbf{heterogeneous diffusivity} \(D(\mathbf x)\) as the headline new
+capability:
+\[
+\partial_t\psi \;=\; \nabla\cdot\!\big(D(\mathbf x)\,\nabla\psi\big).
+\]
+The Phase 1 / Phase 5 / Phase 6 surface (FD
+\passthrough{\lstinline!diff::laplacian!} +
+constant-\(D\) \passthrough{\lstinline!solve::diffuse(\(\psi\), D, dt, n, tag)!})
+is unchanged --- callers with constant \(D\) see no change. The new
+heterogeneous-\(D\) path is the only place where FVM produces
+different physics from FD; on uniform Cartesian grids the two paths
+agree to round-off (locked in by the
+\passthrough{\lstinline!AgreesWithFdLaplacianAtConstantD!} test gate).
+
+Three new public symbols:
+
+\begin{itemize}
+\tightlist
+\item
+  \passthrough{\lstinline!gridcalc::fvm::cellLaplacian(psi, D)!} ---
+  returns
+  \(\nabla\cdot(D\,\nabla\psi)\) via cell-flux discretization with
+  face-centered harmonic-mean \(D\)-averaging. New header
+  \passthrough{\lstinline!include/gridcalc/fvm/CellLaplacian.hpp!}.
+\item
+  \passthrough{\lstinline!solve::diffuse(psi, D\_field, dt, n, tag)!}
+  --- new heterogeneous-\(D\) overload. Reuses the existing
+  \passthrough{\lstinline!solve::ExplicitEuler\{\}!} /
+  \passthrough{\lstinline!solve::RK4\{\}!} integrator tags. CFL bound
+  generalizes to
+  \(D_{\max}\cdot dt\cdot\sum_a (1/h_a^2)\le \texttt{Tag::diffusionCFLLimit}\).
+\item
+  \textbf{Textbook demo.}
+  \passthrough{\lstinline!examples/heterogeneous\_diffusion.cpp!} ---
+  runnable CLI demo solving heterogeneous-\(D\) diffusion of a Gaussian
+  peak through a smooth \(D(x) = D_0 + \varepsilon\cos(2\pi x/L)\)
+  field. Produces VTK snapshots; per-snapshot diagnostics printed to
+  stdout.
+\end{itemize}
+
+\subsection{When FVM, when FD?}\label{phase14-when}
+
+Both paths discretize the Laplacian to second order on a uniform
+Cartesian grid; for a constant \(D\) on a periodic domain they produce
+the \emph{same} stencil. The choice matters only when
+\(D\) varies in space (or when non-periodic boundary conditions are
+in play; Phase 19 will land Dirichlet / Neumann walls and consume the
+FVM foundation).
+
+\begin{itemize}
+\tightlist
+\item
+  Use \textbf{FD}
+  (\passthrough{\lstinline!diff::laplacian!},
+  constant-\(D\)
+  \passthrough{\lstinline!solve::diffuse!}) for differential operators
+  on uniform fields and constant-coefficient diffusion. Lower
+  per-step cost; matches every test from Phases 1--6.
+\item
+  Use \textbf{FVM}
+  (\passthrough{\lstinline!fvm::cellLaplacian!},
+  heterogeneous-\(D\)
+  \passthrough{\lstinline!solve::diffuse!}) for diffusion problems
+  with a spatially varying \(D(\mathbf x)\). The cell-flux formulation
+  is \emph{conservative by construction} and recovers the correct
+  steady-state flux across \(D\)-discontinuities via the harmonic-mean
+  face averaging.
+\end{itemize}
+
+\subsection{Cell-flux discretization}\label{phase14-cellflux}
+
+At each cell \((i, j, k)\), the operator computes the net flux out
+through the six faces, divided by the cell volume. For axis \(a\):
+\[
+[\nabla\!\cdot\!(D\nabla\psi)]_{a,(i,j,k)}
+\;=\;
+\frac{1}{h_a^2}\Big[\,D_{a,+}\,\big(\psi_{a,+}-\psi\big)
+\;-\; D_{a,-}\,\big(\psi-\psi_{a,-}\big)\,\Big],
+\]
+with face-centered diffusivity computed as the \textbf{harmonic mean}
+of the two adjacent cell values:
+\[
+D_{a,+} \;=\; \frac{2\,D(i)\,D(i+1)}{D(i) + D(i+1)},
+\qquad
+D_{a,-} \;=\; \frac{2\,D(i-1)\,D(i)}{D(i-1) + D(i)}.
+\]
+The harmonic mean is the standard FVM choice for diffusion (LeVeque
+2007, Patankar 1980): it recovers the correct steady-state flux when
+\(D\) jumps across a face, where the arithmetic mean would bias
+toward the higher-\(D\) side. The implementation requires
+\(D > 0\) at every cell; the harmonic mean is undefined otherwise.
+The \passthrough{\lstinline!solve::diffuse!} heterogeneous-\(D\) overload
+performs this check up-front and throws on violation.
+
+\subsection{API}\label{phase14-api}
+
+The Phase 1 / Phase 5 surface is unchanged. Phase 14 adds:
+
+\begin{lstlisting}[language={C++}]
+namespace gridcalc::fvm {
+
+// $\nabla\cdot(D \nabla\psi)$ via cell-flux discretization with
+// harmonic-mean face-D averaging. Periodic BCs only; D > 0 required.
+core::Field<double> cellLaplacian(const core::Field<double>& psi,
+                                  const core::Field<double>& D);
+
+}  // namespace gridcalc::fvm
+
+namespace gridcalc::solve {
+
+// New heterogeneous-D overload. Reuses ExplicitEuler / RK4 tags.
+template <class Tag = ExplicitEuler>
+void diffuse(core::Field<double>& psi,
+             const core::Field<double>& D,
+             double dt,
+             int n_steps,
+             Tag tag = {});
+
+}  // namespace gridcalc::solve
+\end{lstlisting}
+
+\subsection{Demo: Gaussian peak in a heterogeneous
+medium}\label{phase14-demo}
+
+Build with \passthrough{\lstinline!GRIDCALC\_BUILD\_EXAMPLES=ON!} (the
+same flag Phase 12 added):
+
+\begin{lstlisting}[language=bash]
+cmake --preset clang-release -DGRIDCALC_BUILD_EXAMPLES=ON
+cmake --build --preset clang-release --target heterogeneous_diffusion
+./build/clang-release/examples/heterogeneous_diffusion \
+    --n-x 64 --n-steps 4000 --snapshot-every 200 \
+    --d-mean 0.10 --d-amplitude 0.07 \
+    --gaussian-sigma 0.5 --integrator rk4 --out-dir ./out
+\end{lstlisting}
+
+This is the run that produced the figures below. The Gaussian peak is
+centered on a 64\(^3\) cubic box; \(D(x) = 0.10 + 0.07\cos(2\pi x/L)\)
+varies smoothly along \(x\), with maxima at \(x \in \{0, L\}\) and a
+minimum at \(x = L/2\). The Gaussian spreads anisotropically: faster
+in the high-\(D\) regions, slower in the low-\(D\) region. Per-snapshot
+diagnostics on stdout track mass conservation, \(L^2\)-norm decay,
+positivity, and peak amplitude.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.32\textwidth]{figures/heterogeneous-diffusion/early.png}\hfill
+  \includegraphics[width=0.32\textwidth]{figures/heterogeneous-diffusion/mid.png}\hfill
+  \includegraphics[width=0.32\textwidth]{figures/heterogeneous-diffusion/late.png}
+  \caption{$z$-midplane slices of $\psi$ from a 64\(^3\)
+  heterogeneous-$D$ diffusion run with $D(x) = 0.10 + 0.07\cos(2\pi
+  x/L)$, Gaussian peak IC ($\sigma = 0.5$, centered),
+  $\Delta t \approx 0.024$, RK4. The peak preferentially diffuses
+  into the high-$D$ corridor along $x$ while staying narrow along
+  the low-$D$ axis at the center; peak amplitude monotonically
+  decays as the Gaussian relaxes toward the steady state $\psi = \langle\psi_0\rangle$.}
+  \label{fig:heterogeneous-diffusion}
+\end{figure}
+
+The Phase 14 acceptance test
+(\href{../../../test/heterogeneous_diffusion_test.cpp}{\passthrough{\lstinline!test/heterogeneous\_diffusion\_test.cpp!}})
+runs a stripped-down version of the same simulation in CI and asserts
+mass conservation, \(L^2\)-norm monotone decrease, and positivity
+preservation. The
+\passthrough{\lstinline!fvm::cellLaplacian!} unit tests
+(\href{../../../test/fvm_cell_laplacian_test.cpp}{\passthrough{\lstinline!test/fvm\_cell\_laplacian\_test.cpp!}})
+verify the harmonic-mean face flux on a 4-cell jump test, the
+order-2 convergence on a manufactured \(D(x) = 1 + 0.5\cos(x)\),
+\(\psi(x) = \sin(x)\) pair, and the conservative property
+\(\sum \texttt{cellLaplacian}(\psi, D) = 0\) on the periodic domain.
+
+\subsection{What this does \emph{not} do}\label{phase14-not-do}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{No FD replacement.} Phase 1's
+  \passthrough{\lstinline!diff::laplacian!}, Phase 2's
+  \passthrough{\lstinline!gradient!} /
+  \passthrough{\lstinline!divergence!}, and Phase 5 / Phase 6's
+  constant-\(D\)
+  \passthrough{\lstinline!solve::diffuse!} are unchanged.
+\item
+  \textbf{No higher-order FVM.} 2nd-order central-difference face
+  fluxes only; MUSCL / WENO reconstructions are out of scope for the
+  v1.0 roadmap.
+\item
+  \textbf{No vector / tensor FVM.} Phase 13's vector / tensor
+  \passthrough{\lstinline!Field!} surface stays separate.
+\item
+  \textbf{No non-periodic BCs.} Phase 19 (the renumbered
+  Dirichlet / Neumann phase) handles them and consumes the FVM
+  foundation as the natural starting point.
+\item
+  \textbf{No implicit / IMEX time stepping.} Phase 20 (renumbered)
+  covers implicit schemes; the heterogeneous-\(D\) overload accepts
+  the explicit \passthrough{\lstinline!ExplicitEuler\{\}!} /
+  \passthrough{\lstinline!RK4\{\}!} tags only.
+\end{itemize}
+
+For the harmonic-mean derivation, the order-2 truncation analysis,
+the generalized CFL bound, and the rationale for keeping the FVM /
+FD paths separate, see the ``Finite volume method'' chapter of the
+Developer Note.

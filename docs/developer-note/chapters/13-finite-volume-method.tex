@@ -1,0 +1,384 @@
+\chapter{Finite volume method (FVM)}
+\label{chap:dev:finite-volume-method}
+
+\begin{quote}
+Phase metadata. Spec dir:
+\passthrough{\lstinline!specs/2026-05-04-phase-14-finite-volume-method/!}.
+Inserted into the roadmap on 2026-05-04 between the just-merged
+Phase 13 (Vector and tensor fields) and the originally-numbered
+Phase 14 (Functional evaluation for vector/tensor data, now Phase 15);
+all subsequent phases renumbered down by one.
+Adds the conservative cell-flux discretization
+\(\nabla\cdot(D\,\nabla\psi)\) for heterogeneous diffusivity. Version
+target: \passthrough{\lstinline!0.14.0!}.
+\end{quote}
+
+\subsection{1. Theory}\label{phase14-theory}
+
+\subsubsection{Conservation laws and the flux-form
+PDE}\label{phase14-conservation}
+
+The heterogeneous-coefficient diffusion equation
+\[
+\partial_t \psi(\mathbf x, t) \;=\; \nabla\cdot\!\big[D(\mathbf x)\,\nabla\psi(\mathbf x, t)\big]
+\]
+is a conservation law for the scalar density \(\psi\):
+\(\partial_t \psi + \nabla\cdot\mathbf J = 0\) with the diffusive flux
+\(\mathbf J(\mathbf x) = -D(\mathbf x)\,\nabla\psi(\mathbf x)\). Integrating over
+any closed control volume \(V\) gives
+\[
+\frac{d}{dt}\int_V \psi\,dV \;=\; -\oint_{\partial V} \mathbf J \cdot d\mathbf S,
+\]
+i.e.\ the rate of change of \(\int_V \psi\) equals the net flux
+through \(\partial V\). On a periodic domain, every face is shared
+between two cells with equal-and-opposite contributions, so the
+total mass \(\int \psi\,dV\) is exactly conserved. The
+finite-\emph{volume} method discretizes this integrated form
+directly and inherits the conservation property at every step
+without further assumptions; the finite-\emph{difference} method
+discretizes the differential form and conserves only when the
+underlying stencil happens to be telescoping (which it is, for the
+3-point central-difference Laplacian on a uniform grid). For
+heterogeneous \(D\) the FVM cell-flux formulation generalizes
+naturally; the FD formulation of \(\nabla\cdot(D\nabla\psi)\) by
+operator composition would still converge but the conservation and
+flux-matching properties are not built-in.
+
+\subsubsection{Why harmonic-mean face
+\(D\)}\label{phase14-harmonic}
+
+Consider a steady-state 1D problem on two adjacent cells with
+\(D = D_L\) on the left and \(D = D_R\) on the right, with a known
+flux \(J\) traversing the interface. The continuous
+heat-equation steady state has constant flux
+\(J = -D(x)\,d\psi/dx\). Integrating across the cell-pair:
+\[
+\psi_R - \psi_L \;=\; \int_{x_L}^{x_R} \frac{d\psi}{dx}\,dx \;=\; -\,J\!\int_{x_L}^{x_R}\!\frac{dx}{D(x)}.
+\]
+For the piecewise-constant \(D\), the integral evaluates to
+\(\frac{h_L/2}{D_L} + \frac{h_R/2}{D_R}\) on a uniform grid with
+cell size \(h\):
+\[
+\psi_R - \psi_L \;=\; -\,J\,\frac{h}{2}\Big(\frac{1}{D_L} + \frac{1}{D_R}\Big).
+\]
+Setting this equal to the FVM update \(\psi_R - \psi_L = -\,J\,h\,/\,D_{\text{face}}\)
+(with whatever face-centered \(D_{\text{face}}\) we choose) and
+solving:
+\[
+D_{\text{face}} \;=\; \frac{2\,D_L\,D_R}{D_L + D_R}.
+\]
+This is the harmonic mean. The arithmetic mean
+\(\tfrac12(D_L + D_R)\) over-predicts the steady-state flux
+whenever the two values differ; the harmonic mean recovers it
+exactly. The Phase 14 implementation uses the harmonic mean at
+every face --- LeVeque (2007) and Patankar (1980) both make this
+the textbook choice for diffusion under non-uniform
+coefficients.
+
+\subsection{2. Math derivation}\label{phase14-math}
+
+\subsubsection{Cell-flux discretization}\label{phase14-cell-flux}
+
+For cell \((i, j, k)\) with size \(h_a\) along axis \(a\) and the
+six neighboring cells along the three axes, write the time
+derivative as the negative divergence of the flux:
+\[
+\partial_t\psi(i, j, k) \;=\; \frac{1}{h_x h_y h_z}\bigg[\,\sum_{a \in \{x, y, z\}}\!\big(F^{(a,+)}_{ijk} - F^{(a,-)}_{ijk}\big)\,A_a\bigg],
+\]
+where \(A_a = h_b h_c\) is the face area perpendicular to axis
+\(a\). The flux through each face is approximated by a
+central-difference of \(\psi\) across that face, scaled by the
+face-centered \(D\):
+\[
+F^{(x,+)}_{ijk} \;=\; -\,D^{(x,+)}_{ijk}\,\frac{\psi(i+1, j, k) - \psi(i, j, k)}{h_x},
+\]
+and similarly for the other 5 faces. With
+\(D^{(x,+)}_{ijk} = \tfrac{2\,D(i,j,k)\,D(i+1,j,k)}{D(i,j,k) + D(i+1,j,k)}\)
+and the cell volume \(h_x h_y h_z\) cancelling against \(A_a / h_a\),
+the per-cell time derivative is
+\[
+\partial_t\psi(i,j,k) \;=\; \sum_a \frac{1}{h_a^2}\,\Big[\,D^{(a,+)}_{ijk}\,(\psi_{a,+} - \psi)\,-\,D^{(a,-)}_{ijk}\,(\psi - \psi_{a,-})\,\Big].
+\]
+This is precisely the expression
+\passthrough{\lstinline!fvm::cellLaplacian!} computes per cell.
+
+\subsubsection{Order-2 truncation analysis}\label{phase14-order-2}
+
+For smooth \(D\), \(\psi\) and uniform spacing \(h\), expand each
+neighbor-value about the cell center:
+\[
+\psi(i \pm 1) \;=\; \psi \pm h\,\partial_x\psi + \tfrac{h^2}{2}\,\partial_x^2\psi \pm \tfrac{h^3}{6}\,\partial_x^3\psi + O(h^4),
+\]
+\[
+D(i \pm 1) \;=\; D \pm h\,\partial_x D + \tfrac{h^2}{2}\,\partial_x^2 D + O(h^3),
+\]
+\[
+D^{(x,\pm)} \;=\; D \pm \tfrac{h}{2}\,\partial_x D + \tfrac{h^2}{8}\,\partial_x^2 D + O(h^3) \pm O(h\,\partial_x D \cdot D / D^2) \dots
+\]
+Combining the harmonic-mean expansions of \(D^{(x,\pm)}\) with the
+finite-difference \(\psi\) increments, the cell-flux expression
+collapses to
+\[
+\partial_t\psi(i,j,k) \;=\; \nabla\!\cdot\!(D\,\nabla\psi) \;+\; O(h^2),
+\]
+matching the continuous operator at second order. The
+order-2 convergence rate is verified empirically by the test fixture
+\passthrough{\lstinline!AnalyticalSolutionConvergence\_Order2!} on
+the manufactured solution
+\(D(x) = 1 + 0.5\cos(x)\), \(\psi(x) = \sin(x)\) (closed-form
+\(\nabla\cdot(D\nabla\psi) = -\sin(x) - 0.5\sin(2x)\)) and by
+\passthrough{\lstinline!RecoversAnalyticalEigenfunctionAtOrder2!}
+on the standard \(\sin\!\cdot\!\sin\!\cdot\!\sin\) eigenfunction
+under uniform \(D\).
+
+\subsubsection{Generalized CFL bound}\label{phase14-cfl}
+
+The continuous heat-equation eigenvalue spectrum of the
+\(-\nabla\!\cdot\!(D\nabla\,\cdot)\) operator is bounded above by
+\(D_{\max}\!\cdot\!\lambda_{\max}^{(\text{Laplacian})}\). On a
+uniform Cartesian grid with the FVM cell-flux discretization, the
+discrete eigenvalues are bounded by
+\(D_{\max}\!\cdot\!\sum_a (4/h_a^2)\) (each axis contributes the
+range \([-4/h_a^2, 0]\) to the FD-Laplacian spectrum, and the
+harmonic-mean coefficients are bounded by \(D_{\max}\) above).
+Forward-Euler stability requires
+\(D_{\max}\!\cdot\!dt\!\cdot\!\sum_a(1/h_a^2)\,\le\,0.5\); RK4
+admits 0.6963 by the same construction. The
+\passthrough{\lstinline!solve::diffuse(psi, D\_field, dt, n, tag)!}
+overload reuses
+\passthrough{\lstinline!detail::checkDiffusionCFL<Tag>!} from
+Phase 6 with \(D = D_{\max}\) substituted for the scalar
+diffusivity.
+
+\subsection{3. Algorithm}\label{phase14-algorithm}
+
+\subsubsection{File layout}\label{phase14-files}
+
+\begin{itemize}
+\tightlist
+\item
+  \href{../../../include/gridcalc/fvm/CellLaplacian.hpp}{\passthrough{\lstinline!include/gridcalc/fvm/CellLaplacian.hpp!}}
+  --- new header. Exposes
+  \passthrough{\lstinline!fvm::cellLaplacian(psi, D)!}; private
+  \passthrough{\lstinline!detail::harmonicMean(a, b)!}.
+\item
+  \href{../../../include/gridcalc/solve/Diffusion.hpp}{\passthrough{\lstinline!include/gridcalc/solve/Diffusion.hpp!}}
+  --- extended with the heterogeneous-\(D\) overload. The constant-\(D\)
+  Phase 5 / Phase 6 overload is unchanged.
+\item
+  \href{../../../examples/heterogeneous_diffusion.cpp}{\passthrough{\lstinline!examples/heterogeneous\_diffusion.cpp!}}
+  --- demo binary; CLI for grid size, time step, integrator, D
+  parameters, IC parameters, output dir.
+\item
+  \href{../../../examples/common/heterogeneous_diffusion.hpp}{\passthrough{\lstinline!examples/common/heterogeneous\_diffusion.hpp!}}
+  --- shared helpers
+  (\passthrough{\lstinline!makeGaussianIc!},
+  \passthrough{\lstinline!makeHeterogeneousD!},
+  diagnostics).
+\item
+  \href{../../../test/fvm_cell_laplacian_test.cpp}{\passthrough{\lstinline!test/fvm\_cell\_laplacian\_test.cpp!}},
+  \href{../../../test/diffusion_test.cpp}{\passthrough{\lstinline!test/diffusion\_test.cpp!}}
+  (heterogeneous-D additions),
+  \href{../../../test/fvm_diffusion_acceptance_test.cpp}{\passthrough{\lstinline!test/fvm\_diffusion\_acceptance\_test.cpp!}},
+  \href{../../../test/heterogeneous_diffusion_test.cpp}{\passthrough{\lstinline!test/heterogeneous\_diffusion\_test.cpp!}}
+  --- 14 new tests across four files.
+\item
+  \href{../../../scripts/render_diffusion_snapshots.py}{\passthrough{\lstinline!scripts/render\_diffusion\_snapshots.py!}}
+  --- matplotlib helper that reads the demo's VTK snapshots and
+  renders \(z\)-midplane PNGs for the User Guide chapter.
+\end{itemize}
+
+\subsubsection{The \texttt{cellLaplacian}
+loop}\label{phase14-loop}
+
+The hot path is a triple-nested loop with six harmonic-mean calls
+plus six \(\psi\)-difference / scaled additions per cell. No
+intermediate field is materialized; the result is written directly
+into the output \passthrough{\lstinline!Field<double>!}:
+
+\begin{lstlisting}[language={C++}]
+for (int k = 0; k < grid.getNz(); ++k)
+  for (int j = 0; j < grid.getNy(); ++j)
+    for (int i = 0; i < grid.getNx(); ++i) {
+      const double psi_c = psi(i, j, k);
+      const double D_c   = D(i, j, k);
+
+      const double D_face_xp = detail::harmonicMean(D_c, D(i + 1, j, k));
+      const double D_face_xm = detail::harmonicMean(D(i - 1, j, k), D_c);
+      // ... y, z faces ...
+
+      const double rhs_x = (D_face_xp * (psi(i + 1, j, k) - psi_c)
+                          - D_face_xm * (psi_c - psi(i - 1, j, k))) * inv_hx2;
+      // ... y, z axes ...
+      result(i, j, k) = rhs_x + rhs_y + rhs_z;
+    }
+\end{lstlisting}
+
+\subsubsection{Heterogeneous-\(D\)
+\passthrough{\lstinline!solve::diffuse!}}\label{phase14-solver}
+
+The new overload validates the harmonic-mean contract
+(\(D > 0\) everywhere) and computes \(D_{\max}\) for the CFL bound
+in a single pre-loop pass:
+
+\begin{lstlisting}[language={C++}]
+double D_max = 0.0;
+for (std::size_t i = 0; i < D.getSize(); ++i) {
+  if (!(D.data()[i] > 0.0)) throw std::invalid_argument("...");
+  if (D.data()[i] > D_max) D_max = D.data()[i];
+}
+detail::checkDiffusionCFL<Integrator>(psi.getGrid(), D_max, dt);
+integrate(psi,
+          [&D](const Field<double>& f) { return fvm::cellLaplacian(f, D); },
+          dt, n_steps, tag);
+\end{lstlisting}
+
+The closure
+\passthrough{\lstinline![\&D](const Field<double>\& f) \{ ... \}!}
+captures \(D\) by reference; its lifetime extends through the
+integrator call, which is the entire scope of
+\passthrough{\lstinline!solve::diffuse!}. No \(D\) copy is made.
+
+\subsubsection{Demo + CI gate}\label{phase14-demo}
+
+The demo binary
+\passthrough{\lstinline!examples/heterogeneous\_diffusion.cpp!}
+threads CLI options through
+\passthrough{\lstinline!parseOptions!}, builds the IC and the
+\(D\)-field via the
+\passthrough{\lstinline!examples/common/!} helpers, and time-steps in
+chunks of \passthrough{\lstinline!--snapshot-every!} steps writing
+VTK snapshots between chunks. The CI gate
+\passthrough{\lstinline!test/heterogeneous\_diffusion\_test.cpp!}
+runs a stripped-down version (\(N=24\), 4 \(\times\) 50 RK4 steps,
+~1.6 s on Apple Clang debug) once per process via a static-cached
+lambda; three TEST\_F bodies share the cached snapshots.
+
+\subsection{4. Design decisions}\label{phase14-decisions}
+
+These distill the choices recorded in
+\passthrough{\lstinline!specs/2026-05-04-phase-14-finite-volume-method/requirements.md!}.
+
+\begin{itemize}
+\item
+  \textbf{Hybrid incorporation, not replacement.} New
+  \passthrough{\lstinline!gridcalc::fvm!} layer hosting the
+  cell-flux Laplacian and its diffusion-solver dispatch. Phase 1's
+  \passthrough{\lstinline!diff::laplacian!} and Phase 5 / Phase 6's
+  constant-\(D\)
+  \passthrough{\lstinline!solve::diffuse!} are unchanged. On uniform
+  grids with constant \(D\), the FVM cell-flux discretization
+  produces the same stencil numbers as the FD path; the new code
+  is only physically distinguishable from the old when
+  \(D\) varies.
+\item
+  \textbf{Harmonic-mean face \(D\), not arithmetic.} Recovers the
+  correct steady-state flux across \(D\)-discontinuities (see
+  \Cref{phase14-harmonic}). The arithmetic mean would give a
+  superficially valid order-2 convergent scheme on smooth \(D\) but
+  the wrong leading-error constant on \(D\) jumps. Documented in
+  the public Doxygen block on
+  \passthrough{\lstinline!fvm::cellLaplacian!}.
+\item
+  \textbf{Reuse the existing \passthrough{\lstinline!solve::*!}
+  integrator tags.} No new \passthrough{\lstinline!fvm::!}-prefixed
+  tag set. The new
+  \passthrough{\lstinline!solve::diffuse(psi, D\_field, ...)!}
+  overload accepts
+  \passthrough{\lstinline!ExplicitEuler\{\}!} and
+  \passthrough{\lstinline!RK4\{\}!} by design --- one less surface
+  to maintain, and the heterogeneous path inherits Phase 6's
+  CFL-bound machinery via
+  \passthrough{\lstinline!detail::checkDiffusionCFL<Tag>!}.
+\item
+  \textbf{Periodic-only at Phase 14.} Phase 19 (the renumbered
+  non-periodic-BC phase) handles Dirichlet / Neumann walls; FVM is
+  the natural foundation for that work because the flux
+  formulation makes wall conditions drop out as boundary-flux
+  prescriptions rather than ghost-cell constructions.
+\item
+  \textbf{No higher-order FVM.} 2nd-order central-difference face
+  fluxes only. Higher-order MUSCL / WENO reconstructions are out
+  of scope.
+\item
+  \textbf{The textbook demo's manufactured-solution trap.}
+  Initially we tried the naive manufactured solution
+  \(\psi(x, y, z, t) = \exp(-D(x)\,t)\,\sin(z)\) under
+  \(D = D(x)\). It satisfies the PDE at \(t = 0\) but \emph{not} for
+  \(t > 0\) --- once \(\psi\) acquires \(x\)-dependence from the
+  position-dependent decay rate, the \(x\)-axis flux
+  \(\partial_x[D\,\partial_x\psi]\) becomes non-zero and the
+  analytical reference drifts away from the discrete trajectory.
+  The
+  \passthrough{\lstinline!fvm\_diffusion\_acceptance\_test.cpp!}
+  source comment records this trap so a future contributor does
+  not re-step it. The test file ships two complementary checks
+  instead: order-2 convergence on the
+  \(\sin\!\cdot\!\sin\!\cdot\!\sin\) eigenfunction with \(D\)
+  uniform (analytical reference, valid because \(\psi\) and \(D\)
+  remain uncoupled) plus qualitative properties on a genuinely
+  heterogeneous \(D\) (mass conservation, max-\(\psi\) monotone
+  decrease, positivity preservation).
+\end{itemize}
+
+\subsection{5. References}\label{phase14-references}
+
+External:
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Patankar, S. V. (1980). \emph{Numerical Heat Transfer and
+  Fluid Flow}. Hemisphere Publishing.} ISBN 978-0-89116-522-4.
+  Section 4.2.3 derives the harmonic-mean face conductivity used in
+  this phase from the requirement that the steady-state flux match
+  the continuous answer across cell faces with discontinuous
+  diffusivity.
+\item
+  \textbf{LeVeque, R. J. (2007). \emph{Finite Difference Methods for
+  Ordinary and Partial Differential Equations: Steady-State and
+  Time-Dependent Problems}. SIAM.}
+  \url{https://doi.org/10.1137/1.9780898717839}. Chapter 4
+  (``Variable coefficients and conservation laws'') covers the FVM
+  cell-flux discretization, the order-2 truncation argument used
+  in
+  \Cref{phase14-order-2}, and the harmonic-mean / arithmetic-mean
+  trade-off; Chapter 9 covers the generalized CFL bound used in
+  \Cref{phase14-cfl}.
+\item
+  \textbf{Hundsdorfer, W., \& Verwer, J. G. (2003).
+  \emph{Numerical Solution of Time-Dependent Advection-Diffusion-Reaction
+  Equations}. Springer.}
+  \url{https://doi.org/10.1007/978-3-662-09017-6}. Chapter 1
+  (``Spatial discretization'') covers the FVM treatment of
+  heterogeneous diffusion and the conservation-form proof that
+  carries through to the time integrator. Used informally in
+  \Cref{phase14-conservation}.
+\item
+  \textbf{VTK File Formats reference.} Permanent URL:
+  \url{https://kitware.github.io/vtk-examples/site/VTKFileFormats/}.
+  Documents the legacy ASCII
+  \passthrough{\lstinline!STRUCTURED\_POINTS!} format the demo
+  writes; reused from Phase 12 with no changes.
+\end{itemize}
+
+Internal cross-references (do not satisfy the ``external'' minimum):
+
+\begin{itemize}
+\tightlist
+\item
+  \Cref{chap:dev:periodic-3d-scalar-laplacian} --- Phase 1's
+  \passthrough{\lstinline!diff::laplacian!}, the FD reference the
+  Phase 14 constant-\(D\) agreement gate compares against.
+\item
+  \Cref{chap:dev:explicit-euler-diffusion} and
+  \Cref{chap:dev:rk4--generic-time-integrator} --- Phase 5 / Phase
+  6's
+  \passthrough{\lstinline!solve::diffuse!} +
+  \passthrough{\lstinline!solve::integrate!} dispatch reused by the
+  new heterogeneous-\(D\) overload.
+\item
+  \Cref{chap:dev:cahn-hilliard} --- Phase 12's CH demo + VTK writer
+  + acceptance-test pattern, which Phase 14's demo + CI gate
+  mirror.
+\end{itemize}
