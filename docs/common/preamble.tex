@@ -1,0 +1,81 @@
+% docs/common/preamble.tex
+%
+% Shared LaTeX preamble for the gridcalc User Guide (memoir class) and
+% Developer Note (book class). Both books \input{} this file.
+%
+% Phase 10 docs infrastructure. \since 0.10.0 (project versioning).
+
+% --- Math ---------------------------------------------------------------------
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+\usepackage{mathtools}
+
+% --- Code listings ------------------------------------------------------------
+
+\usepackage{listings}
+\usepackage{xcolor}
+
+\definecolor{lstkeyword}{RGB}{40,80,160}
+\definecolor{lstcomment}{RGB}{96,96,96}
+\definecolor{lststring}{RGB}{160,80,40}
+\definecolor{lstbg}{RGB}{248,248,248}
+
+\lstdefinestyle{gridcalcCpp}{
+    language=C++,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{lstkeyword}\bfseries,
+    commentstyle=\color{lstcomment}\itshape,
+    stringstyle=\color{lststring},
+    backgroundcolor=\color{lstbg},
+    showstringspaces=false,
+    breaklines=true,
+    breakatwhitespace=true,
+    columns=fullflexible,
+    keepspaces=true,
+    tabsize=2,
+    frame=single,
+    framesep=4pt,
+    framerule=0pt,
+    aboveskip=0.6\baselineskip,
+    belowskip=0.6\baselineskip,
+    morekeywords={
+        Field, Grid, Vec3d, Mat3d, Coefficients, FirstDerivative,
+        ThirdDerivative, FourthDerivative, IndexPolicy, Periodic,
+        ExplicitEuler, RK4, Pairwise, Kahan, ComplexField,
+        gridcalc, core, diff, func, solve, spectral, stencil, detail,
+        constexpr, noexcept, nullptr, override, final, decltype,
+        auto, std, std::size_t, std::complex, std::vector, std::pair,
+        std::array
+    }
+}
+\lstset{style=gridcalcCpp}
+
+% --- Hyperlinks (kept conservative for print-friendly PDFs) -------------------
+
+\usepackage[
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    citecolor=blue!60!black,
+    urlcolor=blue!60!black,
+    pdfborder={0 0 0}
+]{hyperref}
+
+% --- File / path typesetting --------------------------------------------------
+
+\usepackage{url}
+\providecommand{\path}[1]{\texttt{#1}}
+
+% --- Project-local short macros -----------------------------------------------
+
+\providecommand{\gridcalc}{\textsf{gridcalc}}
+\providecommand{\Field}{\texttt{Field}}
+\providecommand{\Grid}{\texttt{Grid}}
+\providecommand{\Order}[1]{\ensuremath{\langle\text{Order}=#1\rangle}}
+
+% Display-math operator helpers used across multiple chapters.
+\providecommand{\dd}{\,\mathrm{d}}
+\providecommand{\Real}{\mathbb{R}}
+\providecommand{\Cplx}{\mathbb{C}}
+\providecommand{\norm}[1]{\left\lVert#1\right\rVert}

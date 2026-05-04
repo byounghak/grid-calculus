@@ -1,0 +1,26 @@
+\chapter{Overview}
+\label{chap:dev-overview}
+
+This Developer Note collects the math, algorithms, and design decisions
+behind every public feature \gridcalc{} ships. It is the engineering
+reference for code authors and reviewers; the User Guide is the
+production-user reference.
+
+Each subsequent chapter follows a fixed five-section structure:
+
+\begin{enumerate}
+    \item \textbf{Theory} — the mathematical objects and identities.
+    \item \textbf{Math derivation} — explicit derivations of the
+        discrete formulas the code uses.
+    \item \textbf{Algorithm} — the procedure the code executes, with
+        file-path references.
+    \item \textbf{Design decisions} — the non-obvious choices, with
+        rationale.
+    \item \textbf{References} — citations resolving every theorem,
+        formula, or algorithmic choice referenced above.
+\end{enumerate}
+
+The \hyperref[chap:api-reference]{API Reference} appendix at the end of
+the book is auto-generated from Doxygen-extracted comments on the
+public headers; cross-references between chapter content and the API
+appendix should be lossless.
