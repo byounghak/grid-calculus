@@ -18,6 +18,7 @@ add_executable(gridcalc_tests
     fd_fft_crosscheck_test.cpp
     pfc_functional_test.cpp
     vtk_writer_test.cpp
+    cahn_hilliard_test.cpp
 )
 
 # Tests for the example helpers (`examples/common/...`) include them
