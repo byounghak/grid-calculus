@@ -18,6 +18,7 @@
 #include <gridcalc/core/Grid.hpp>
 #include <gridcalc/diff/Divergence.hpp>
 #include <gridcalc/diff/Gradient.hpp>
+#include <gridcalc/tensor/Contraction.hpp>
 
 namespace {
 
@@ -332,6 +333,106 @@ TEST(MatDivergenceTest, Order4IsTighterThanOrder2) {
         }
     }
     EXPECT_LT(err4, err2 / 5.0);
+}
+
+// =============================================================================
+// Contraction primitives: trace, singleContract, doubleContract
+// =============================================================================
+
+using gridcalc::tensor::doubleContract;
+using gridcalc::tensor::singleContract;
+using gridcalc::tensor::trace;
+
+TEST(TraceTest, OnIdentityField) {
+    Grid g(4, 5, 6, Vec3d(1.0, 1.0, 1.0));
+    Field<Mat3d> M(g, Mat3d::Identity());
+    auto t = trace(M);
+    for (double v : t) {
+        EXPECT_DOUBLE_EQ(v, 3.0);
+    }
+}
+
+TEST(TraceTest, MatchesEigenTraceOnNonTrivialEntries) {
+    Grid g(3, 3, 3, Vec3d(1.0, 1.0, 1.0));
+    Field<Mat3d> M(g, Mat3d::Zero());
+    Mat3d A;
+    A << 1.0, 2.0, 3.0,
+         4.0, 5.0, 6.0,
+         7.0, 8.0, 9.0;
+    for (auto& cell : M) cell = A;
+    auto t = trace(M);
+    for (double v : t) {
+        EXPECT_DOUBLE_EQ(v, A.trace());  // 1 + 5 + 9 = 15
+    }
+}
+
+TEST(SingleContractTest, AContractIdentityIsA) {
+    Grid g(3, 3, 3, Vec3d(1.0, 1.0, 1.0));
+    Mat3d A;
+    A << 1.0, 2.0, 3.0,
+         4.0, 5.0, 6.0,
+         7.0, 8.0, 9.0;
+    Field<Mat3d> Af(g, A);
+    Field<Mat3d> If(g, Mat3d::Identity());
+    auto out = singleContract(Af, If);
+    for (const auto& M : out) {
+        EXPECT_EQ(M, A);
+    }
+}
+
+TEST(SingleContractTest, MatchesEigenMatrixProduct) {
+    Grid g(2, 2, 2, Vec3d(1.0, 1.0, 1.0));
+    Mat3d A;
+    A << 1.0, 2.0, 3.0,
+         4.0, 5.0, 6.0,
+         7.0, 8.0, 9.0;
+    Mat3d B;
+    B << 9.0, 8.0, 7.0,
+         6.0, 5.0, 4.0,
+         3.0, 2.0, 1.0;
+    Field<Mat3d> Af(g, A);
+    Field<Mat3d> Bf(g, B);
+    auto out = singleContract(Af, Bf);
+    const Mat3d expected = A * B;
+    for (const auto& M : out) {
+        EXPECT_EQ(M, expected);
+    }
+}
+
+TEST(DoubleContractTest, FrobeniusSquared) {
+    // A : A = sum_{ij} A(i, j)^2 = ||A||_F^2.
+    Grid g(3, 3, 3, Vec3d(1.0, 1.0, 1.0));
+    Mat3d A;
+    A << 1.0, 2.0, 3.0,
+         4.0, 5.0, 6.0,
+         7.0, 8.0, 9.0;
+    Field<Mat3d> Af(g, A);
+    auto out = doubleContract(Af, Af);
+    const double expected = A.squaredNorm();  // 1+4+9+16+25+36+49+64+81 = 285
+    EXPECT_DOUBLE_EQ(expected, 285.0);
+    for (double v : out) {
+        EXPECT_DOUBLE_EQ(v, expected);
+    }
+}
+
+TEST(DoubleContractTest, EqualsTraceOfTransposeProduct) {
+    // A : B = tr(A^T B) for arbitrary A, B.
+    Grid g(2, 3, 2, Vec3d(1.0, 1.0, 1.0));
+    Mat3d A;
+    A << 1.0, 2.0, 3.0,
+         4.0, 5.0, 6.0,
+         7.0, 8.0, 9.0;
+    Mat3d B;
+    B << 9.0, 8.0, 7.0,
+         6.0, 5.0, 4.0,
+         3.0, 2.0, 1.0;
+    Field<Mat3d> Af(g, A);
+    Field<Mat3d> Bf(g, B);
+    auto contracted = doubleContract(Af, Bf);
+    const double expected = (A.transpose() * B).trace();
+    for (double v : contracted) {
+        EXPECT_DOUBLE_EQ(v, expected);
+    }
 }
 
 }  // namespace
