@@ -1,10 +1,12 @@
 #include <gtest/gtest.h>
 
+#include <gridcalc/core/EigenAliases.hpp>
 #include <gridcalc/core/Field.hpp>
 #include <gridcalc/core/Grid.hpp>
 
 using gridcalc::core::Field;
 using gridcalc::core::Grid;
+using gridcalc::core::Mat3d;
 using gridcalc::core::Vec3d;
 
 TEST(FieldTest, ZeroInitFillsZero) {
@@ -82,4 +84,73 @@ TEST(FieldTest, GridCopiedByValue) {
   EXPECT_EQ(f.getGrid().getNy(), g.getNy());
   EXPECT_EQ(f.getGrid().getNz(), g.getNz());
   EXPECT_DOUBLE_EQ(f.getGrid().getCellVolume(), g.getCellVolume());
+}
+
+TEST(FieldMat3dTest, BroadcastConstructorFillsEveryCell) {
+  Grid g(3, 4, 5, Vec3d(1.0, 1.0, 1.0));
+  Mat3d M;
+  M << 1.0, 2.0, 3.0,
+       4.0, 5.0, 6.0,
+       7.0, 8.0, 9.0;
+  Field<Mat3d> f(g, M);
+  EXPECT_EQ(f.getSize(), g.getSize());
+  for (int k = 0; k < g.getNz(); ++k) {
+    for (int j = 0; j < g.getNy(); ++j) {
+      for (int i = 0; i < g.getNx(); ++i) {
+        EXPECT_EQ(f(i, j, k), M);
+      }
+    }
+  }
+}
+
+TEST(FieldMat3dTest, ZeroBroadcastIsZeroEverywhere) {
+  Grid g(2, 3, 2, Vec3d(1.0, 1.0, 1.0));
+  Field<Mat3d> f(g, Mat3d::Zero());
+  for (auto& M : f) {
+    EXPECT_TRUE(M.isZero());
+  }
+}
+
+TEST(FieldMat3dTest, WriteThenReadRoundTrip) {
+  Grid g(2, 3, 4, Vec3d(1.0, 1.0, 1.0));
+  Field<Mat3d> f(g, Mat3d::Zero());
+  for (int k = 0; k < g.getNz(); ++k) {
+    for (int j = 0; j < g.getNy(); ++j) {
+      for (int i = 0; i < g.getNx(); ++i) {
+        Mat3d M = Mat3d::Zero();
+        M(0, 0) = static_cast<double>(100 * i + 10 * j + k);
+        M(1, 2) = static_cast<double>(i + j + k);
+        f(i, j, k) = M;
+      }
+    }
+  }
+  for (int k = 0; k < g.getNz(); ++k) {
+    for (int j = 0; j < g.getNy(); ++j) {
+      for (int i = 0; i < g.getNx(); ++i) {
+        EXPECT_DOUBLE_EQ(f(i, j, k)(0, 0), static_cast<double>(100 * i + 10 * j + k));
+        EXPECT_DOUBLE_EQ(f(i, j, k)(1, 2), static_cast<double>(i + j + k));
+      }
+    }
+  }
+}
+
+TEST(FieldMat3dTest, IFastestLayoutMatchesScalarField) {
+  // Storage layout for Field<Mat3d> uses the same Grid::getLinearIndex
+  // mapping as Field<double>, so adjacent grid points along x are
+  // adjacent in `data()` (one Mat3d apart, not one double apart).
+  Grid g(4, 2, 2, Vec3d(1.0, 1.0, 1.0));
+  Field<Mat3d> f(g, Mat3d::Zero());
+  for (int k = 0; k < g.getNz(); ++k) {
+    for (int j = 0; j < g.getNy(); ++j) {
+      for (int i = 0; i < g.getNx(); ++i) {
+        f(i, j, k) = static_cast<double>(i) * Mat3d::Identity();
+      }
+    }
+  }
+  // i-fastest: (1, 0, 0) - (0, 0, 0) is one Mat3d step in storage.
+  const Mat3d* base = f.data();
+  EXPECT_EQ(base[0], 0.0 * Mat3d::Identity());
+  EXPECT_EQ(base[1], 1.0 * Mat3d::Identity());
+  EXPECT_EQ(base[2], 2.0 * Mat3d::Identity());
+  EXPECT_EQ(base[3], 3.0 * Mat3d::Identity());
 }
