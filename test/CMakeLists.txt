@@ -17,6 +17,14 @@ add_executable(gridcalc_tests
     spectral_basic_test.cpp
     fd_fft_crosscheck_test.cpp
     pfc_functional_test.cpp
+    vtk_writer_test.cpp
+)
+
+# Tests for the example helpers (`examples/common/...`) include them
+# directly as headers; they are not gated on GRIDCALC_BUILD_EXAMPLES so
+# that the round-trip and acceptance gates run on every PR.
+target_include_directories(gridcalc_tests PRIVATE
+    "${CMAKE_SOURCE_DIR}/examples"
 )
 
 target_link_libraries(gridcalc_tests PRIVATE
