@@ -15,3 +15,14 @@ target_link_libraries(cahn_hilliard PRIVATE
     gridcalc::gridcalc
     gridcalc_warnings
 )
+
+add_executable(heterogeneous_diffusion heterogeneous_diffusion.cpp)
+
+target_include_directories(heterogeneous_diffusion PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+)
+
+target_link_libraries(heterogeneous_diffusion PRIVATE
+    gridcalc::gridcalc
+    gridcalc_warnings
+)
