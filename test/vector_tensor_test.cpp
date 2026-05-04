@@ -410,9 +410,127 @@ TEST(DoubleContractTest, FrobeniusSquared) {
     auto out = doubleContract(Af, Af);
     const double expected = A.squaredNorm();  // 1+4+9+16+25+36+49+64+81 = 285
     EXPECT_DOUBLE_EQ(expected, 285.0);
-    for (double v : out) {
-        EXPECT_DOUBLE_EQ(v, expected);
+    for (double w : out) {
+        EXPECT_DOUBLE_EQ(w, expected);
     }
+}
+
+// =============================================================================
+// Vector identities (the roadmap acceptance bar)
+// =============================================================================
+
+TEST(VectorIdentityTest, HessianIsSymmetric) {
+    // For smooth phi, H := gradient(gradient(phi)) is symmetric:
+    // H(i, j) = H(j, i). At the discrete level this should hold to
+    // round-off, since the FD operators ∂_i and ∂_j commute on a
+    // periodic uniform grid (the composed stencil is symmetric in the
+    // pair of axis indices). This is the rank-raising restatement of
+    // the roadmap's curl(grad(phi)) = 0 acceptance example.
+    constexpr int N = 32;
+    const double L = 2.0 * kPi;
+    const double h = L / N;
+    Grid g(N, N, N, Vec3d(h, h, h));
+
+    Field<double> phi(g, [](double x, double y, double z) {
+        return std::sin(x) * std::cos(y) * std::sin(z);
+    });
+    auto grad_phi = gradient(phi);
+    auto H = gradient(grad_phi);
+
+    double max_asym = 0.0;
+    for (int k = 0; k < N; ++k) {
+        for (int j = 0; j < N; ++j) {
+            for (int i = 0; i < N; ++i) {
+                const Mat3d& Hp = H(i, j, k);
+                max_asym = std::max(max_asym, std::abs(Hp(0, 1) - Hp(1, 0)));
+                max_asym = std::max(max_asym, std::abs(Hp(0, 2) - Hp(2, 0)));
+                max_asym = std::max(max_asym, std::abs(Hp(1, 2) - Hp(2, 1)));
+            }
+        }
+    }
+    EXPECT_LT(max_asym, 1e-12);
+}
+
+TEST(VectorIdentityTest, TraceOfGradientEqualsDivergence) {
+    // trace(gradient(v)) = ∂_x v_x + ∂_y v_y + ∂_z v_z = divergence(v).
+    // Both routes use the same FirstDerivative stencil at default Order=2,
+    // so they agree to round-off (modulo summation order).
+    constexpr int N = 32;
+    const double L = 2.0 * kPi;
+    const double h = L / N;
+    Grid g(N, N, N, Vec3d(h, h, h));
+
+    auto v = sampleVectorField(g, [](double x, double y, double z) {
+        return Vec3d(std::sin(x) * std::cos(y),
+                     std::sin(y) * std::cos(z),
+                     std::sin(z) * std::cos(x));
+    });
+    auto trace_grad_v = trace(gradient(v));
+    auto div_v = divergence(v);
+
+    double max_diff = 0.0;
+    for (int k = 0; k < N; ++k) {
+        for (int j = 0; j < N; ++j) {
+            for (int i = 0; i < N; ++i) {
+                max_diff = std::max(max_diff, std::abs(trace_grad_v(i, j, k) - div_v(i, j, k)));
+            }
+        }
+    }
+    EXPECT_LT(max_diff, 1e-12);
+}
+
+// Manufactured vector field with closed-form vector Laplacian:
+//   v(x, y, z) = (sin(x) cos(y), sin(y) cos(z), sin(z) cos(x))
+// Each Cartesian component depends on exactly two axes, so its scalar
+// Laplacian sums two `-component` contributions (one per active axis):
+//   ∇^2 v_0 = -sin(x) cos(y) - sin(x) cos(y) = -2 sin(x) cos(y) = -2 v_0
+// and likewise for v_1, v_2 by symmetry. Hence ∇²v = -2 v.
+auto kVectorTrigField = [](double x, double y, double z) {
+    return Vec3d(std::sin(x) * std::cos(y),
+                 std::sin(y) * std::cos(z),
+                 std::sin(z) * std::cos(x));
+};
+
+double divGradVsAnalyticalLaplacianErrorAtN(int N) {
+    const double L = 2.0 * kPi;
+    const double h = L / N;
+    Grid g(N, N, N, Vec3d(h, h, h));
+    auto v = sampleVectorField(g, kVectorTrigField);
+    auto lap_via_div_grad = divergence(gradient(v));
+
+    double err = 0.0;
+    for (int k = 0; k < N; ++k) {
+        for (int j = 0; j < N; ++j) {
+            for (int i = 0; i < N; ++i) {
+                const double x = static_cast<double>(i) * h;
+                const double y = static_cast<double>(j) * h;
+                const double z = static_cast<double>(k) * h;
+                const Vec3d analytical = -2.0 * kVectorTrigField(x, y, z);
+                err = std::max(err, (lap_via_div_grad(i, j, k) - analytical).cwiseAbs().maxCoeff());
+            }
+        }
+    }
+    return err;
+}
+
+TEST(VectorIdentityTest, DivergenceOfGradientEqualsLaplacian) {
+    // ∇·(∇v)_i = ∂_j ∂_j v_i = (vector Laplacian)_i. The discrete
+    // div(grad(·)) round-trip uses two FirstDerivative stencils composed,
+    // which is a stride-2 second-derivative — converges to ∇² at order 2
+    // but with a different leading-error constant than `diff::laplacian`'s
+    // 3-point stencil (the standing Phase 2 STATUS-line phenomenon).
+    // The test compares against the *analytical* vector Laplacian
+    // (= -2 v for the chosen field) and asserts the documented O(h²) rate.
+    const double e16 = divGradVsAnalyticalLaplacianErrorAtN(16);
+    const double e32 = divGradVsAnalyticalLaplacianErrorAtN(32);
+    const double e64 = divGradVsAnalyticalLaplacianErrorAtN(64);
+
+    const double slope_16_32 = std::log2(e16 / e32);
+    const double slope_32_64 = std::log2(e32 / e64);
+    EXPECT_GT(slope_16_32, 1.7);
+    EXPECT_LT(slope_16_32, 2.3);
+    EXPECT_GT(slope_32_64, 1.7);
+    EXPECT_LT(slope_32_64, 2.3);
 }
 
 TEST(DoubleContractTest, EqualsTraceOfTransposeProduct) {
