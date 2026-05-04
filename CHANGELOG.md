@@ -4,6 +4,127 @@ All notable changes to gridcalc are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+> **Roadmap renumber, 2026-05-04.** A new **Phase 14 — Finite volume
+> method (FVM)** was inserted into `specs/roadmap.md` between (the
+> just-merged) Phase 13 (Vector and tensor fields) and the
+> previously-numbered Phase 14 (Functional evaluation for vector/tensor
+> data, now **Phase 15**). All subsequent phases shifted up by one:
+> `Phase N → Phase N+1` for `N ∈ [14, 22]`. The mechanical rename was
+> applied to `specs/roadmap.md`, `specs/STATUS.md`, the post-Phase-13
+> doc chapters' forward-references, and a single comment in
+> `test/integrate_test.cpp`. Historical CHANGELOG entries below
+> (0.11.0 / 0.12.0 / 0.13.0) are **not** renumbered — they are
+> version-block-scoped historical records, and the references to
+> "Phase 14" in those blocks meant the originally-numbered Phase 14
+> (= today's Phase 15). Future blocks reference the post-renumber
+> numbering directly.
+
+## 0.14.0 — Phase 14: Finite volume method (FVM)
+
+### Added
+
+- **`gridcalc::fvm` namespace and `include/gridcalc/fvm/CellLaplacian.hpp`**
+  — new public header. Exposes
+  `fvm::cellLaplacian(psi, D)` returning `∇·(D ∇ψ)` via cell-flux
+  discretization with face-centered **harmonic-mean** D-averaging
+  (`D_face = 2 D_L D_R / (D_L + D_R)`). Strictly positive `D` required
+  per the harmonic-mean contract. The constant-`D = c` case reduces to
+  `c · diff::laplacian(psi)` to round-off, verified by a dedicated
+  agreement-gate test.
+- **Heterogeneous-D `solve::diffuse` overload** —
+  `solve::diffuse(psi, const Field<double>& D, dt, n_steps, tag)`.
+  Reuses the existing `solve::ExplicitEuler{}` / `solve::RK4{}`
+  integrator tags. Pre-loop pass over `D` validates the
+  `D > 0` contract and computes `D_max` for the generalized CFL bound
+  in a single sweep; throws `std::invalid_argument` with a flat-index
+  pointer on contract violation. CFL bound generalizes to
+  `D_max · dt · sum_a (1/h_a²) ≤ Tag::diffusionCFLLimit`. The
+  constant-`D` Phase 5 / Phase 6 overload is unchanged.
+- **Textbook FVM demo** — `examples/heterogeneous_diffusion.cpp`
+  solving heterogeneous-`D` diffusion of a Gaussian peak through a
+  smooth `D(x) = D0 + ε cos(2π x / L)` field. CLI options for grid
+  size, time step (auto-CFL when `--dt 0`), step count, snapshot
+  cadence, D parameters, IC sigma, integrator (`euler` | `rk4`), and
+  output dir. VTK `STRUCTURED_POINTS` snapshots written via the Phase
+  12 writer. Per-snapshot diagnostics on stdout: mass (constant to
+  round-off), L²-norm-squared (strictly decreasing), psi_min (≥ 0),
+  psi_max (monotonically non-increasing).
+- **Demo helpers** — `examples/common/heterogeneous_diffusion.hpp`
+  shared between the demo binary and its CI gate. Exposes
+  `makeGaussianIc`, `makeHeterogeneousD` (with `|ε| < D0` validation),
+  `computeMass`, `computeL2Squared`, `computeMin`, `computeMax`.
+- **15 new tests** across four files:
+  - `test/fvm_cell_laplacian_test.cpp` (6 tests): constant-D agreement
+    with the FD path; harmonic-mean face flux on a 4-cell D-jump
+    test; order-2 convergence on a manufactured `D(x) = 1 + 0.5 cos(x)`,
+    `ψ(x) = sin(x)` pair; mass conservation on the periodic sum.
+  - `test/diffusion_test.cpp` (4 tests): heterogeneous-D path agrees
+    with constant-D path on a uniform `D` field; CFL violation throws;
+    non-positive `D` throws; mass conserved over many integrator
+    steps.
+  - `test/fvm_diffusion_acceptance_test.cpp` (2 tests): order-2
+    convergence on the analytical sin·sin·sin eigenfunction (uniform-D
+    code path); qualitative properties on a genuinely varying `D(x)`
+    (mass conservation, max|ψ| monotone-decrease, positivity
+    preservation).
+  - `test/heterogeneous_diffusion_test.cpp` (3 tests): demo CI gate
+    with static-cached snapshot fixture (mirrors Phase 12's CH test
+    pattern); ~1.6 s on Apple Clang debug.
+- **User Guide chapter 14** — *Finite volume method* —
+  `docs/user-guide/chapters/14-finite-volume-method.tex`. Walks
+  motivation (FVM vs. FD), the cell-flux discretization, harmonic-mean
+  averaging, the heterogeneous-D `solve::diffuse` API, and the demo
+  walkthrough with three committed PNG snapshots showing anisotropic
+  Gaussian spreading through the heterogeneous medium.
+- **Developer Note chapter 13** — *Finite volume method* —
+  `docs/developer-note/chapters/13-finite-volume-method.tex` with the
+  standing five-section structure. Theory: conservation-law form of
+  the PDE; Patankar-style derivation of the harmonic mean from the
+  steady-state-flux match across a discontinuity. Math derivation:
+  cell-flux discretization, order-2 truncation, generalized CFL bound.
+  Algorithm: file layout, `cellLaplacian` loop, heterogeneous-D
+  solver. Design decisions: the four AskUserQuestion answers + the
+  manufactured-solution trap from Group 6. References: Patankar 1980,
+  LeVeque 2007, Hundsdorfer & Verwer 2003, VTK file-format
+  reference (all with permanent identifiers / DOIs / ISBNs).
+- **Roadmap renumber.** New Phase 14 entry inserted into
+  `specs/roadmap.md`; existing Phases 14–22 renumbered to 15–23.
+  v1.0 release becomes Phase 23.
+- **`scripts/render_diffusion_snapshots.py`** — matplotlib helper
+  generating `z`-midplane PNGs from the demo's VTK snapshots
+  (mirrors `render_ch_snapshots.py` from Phase 12 with a
+  sequential-colormap default for non-negative `ψ`).
+
+### Changed
+
+- **Version bumped to `0.14.0`.**
+- `docs/user-guide/main.tex` — adds
+  `\input{chapters/14-finite-volume-method.tex}`.
+- `docs/developer-note/main.tex` — adds
+  `\input{chapters/13-finite-volume-method.tex}`.
+- `examples/CMakeLists.txt` — new `heterogeneous_diffusion` target
+  alongside `cahn_hilliard` (same gating, same warning set, picks up
+  `examples/common/` via the shared `target_include_directories`).
+
+### Notes
+
+- **Hybrid incorporation, not replacement.** Phase 1's
+  `diff::laplacian`, Phase 2's `gradient` / `divergence`, and Phase
+  5 / Phase 6's constant-D `solve::diffuse` are unchanged.
+- **Phase 9's FD–FFT cross-check fixture is unaffected** — Phase 14
+  adds no new FD operators.
+- **Periodic only.** Phase 19 (renumbered) handles non-periodic BCs
+  and now leverages the FVM foundation.
+- **No higher-order FVM, no IMEX.** 2nd-order central-difference face
+  fluxes only; explicit time stepping only.
+
+### Tests
+
+- 258 tests pass on `clang-debug` (243 prior + 15 new spanning four
+  files).
+- 182 expected on `clang-debug-nofft` (167 prior + 15 new — none of
+  the new tests touch the spectral path).
+
 ## 0.13.0 — Phase 13: Vector and tensor fields
 
 ### Added
