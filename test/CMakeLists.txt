@@ -19,6 +19,7 @@ add_executable(gridcalc_tests
     pfc_functional_test.cpp
     vtk_writer_test.cpp
     cahn_hilliard_test.cpp
+    vector_tensor_test.cpp
 )
 
 # Tests for the example helpers (`examples/common/...`) include them
