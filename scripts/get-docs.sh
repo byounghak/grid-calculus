@@ -62,17 +62,20 @@ while [[ $# -gt 0 ]]; do
 done
 
 have_local_render() {
-  command -v pandoc >/dev/null 2>&1 && command -v xelatex >/dev/null 2>&1
+  command -v doxygen >/dev/null 2>&1 \
+    && command -v latexmk >/dev/null 2>&1 \
+    && command -v cmake >/dev/null 2>&1
 }
 
 run_local_render() {
-  echo "running local pandoc render"
-  # render-docs.sh writes to build/docs/. Mirror to OUT_DIR if different.
-  "$ROOT/scripts/render-docs.sh"
+  echo "running local LaTeX docs render via scripts/build-docs.sh"
+  # build-docs.sh writes to build/docs/docs/{user-guide,developer-note}/main.pdf
+  "$ROOT/scripts/build-docs.sh"
   if [[ "$OUT_DIR" != "$DEFAULT_OUT_DIR" ]]; then
     mkdir -p "$OUT_DIR"
-    cp "$DEFAULT_OUT_DIR/user-guide.pdf" "$DEFAULT_OUT_DIR/developer-note.pdf" "$OUT_DIR/"
   fi
+  cp "$ROOT/build/docs/docs/user-guide/main.pdf"      "$OUT_DIR/user-guide.pdf"
+  cp "$ROOT/build/docs/docs/developer-note/main.pdf"  "$OUT_DIR/developer-note.pdf"
 }
 
 resolve_run_id() {

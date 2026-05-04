@@ -1,6 +1,132 @@
 \chapter{Hello grid}
 \label{chap:hello-grid}
 
-\textit{This tutorial chapter walks through the operators delivered in
-Phases 1--9 with a single end-to-end example. Filled in by Phase 10
-Group 5; placeholder until then.}
+This chapter walks through the operators delivered through Phase 9 with
+a single end-to-end example. Each subsequent chapter (\Cref{chap:grid-and-laplacian}
+onward) is the per-feature reference; this chapter is the on-ramp.
+
+\section{Setting up a grid and field}
+
+The two foundational types are \texttt{Grid} (Cartesian-orthogonal
+sampling lattice with per-axis cell sizes) and \texttt{Field<T, Policy>}
+(periodic 3D field on a \texttt{Grid}, default policy \texttt{Periodic}):
+
+\begin{lstlisting}[language={C++}]
+#include <gridcalc/core/Grid.hpp>
+#include <gridcalc/core/Field.hpp>
+
+using gridcalc::core::Field;
+using gridcalc::core::Grid;
+using gridcalc::core::Vec3d;
+
+constexpr double kPi = 3.14159265358979323846;
+const int N = 32;
+const double h = 2.0 * kPi / N;
+
+Grid grid(N, N, N, Vec3d(h, h, h));
+Field<double> psi(grid, [](double x, double y, double z) {
+    return std::sin(x) * std::sin(y) * std::sin(z);
+});
+\end{lstlisting}
+
+\section{First derivatives at order 2}
+
+\texttt{diff::laplacian}, \texttt{diff::gradient}, \texttt{diff::divergence}
+all default to second-order accuracy:
+
+\begin{lstlisting}[language={C++}]
+#include <gridcalc/diff/Laplacian.hpp>
+#include <gridcalc/diff/Gradient.hpp>
+
+Field<double> lap = gridcalc::diff::laplacian(psi);
+Field<Vec3d>  grd = gridcalc::diff::gradient(psi);
+\end{lstlisting}
+
+For $\psi = \sin x \sin y \sin z$, the analytical $\nabla^2 \psi$ is
+$-3\psi$. Numerical match is $O(h^2)$.
+
+\section{Higher accuracy}
+
+Switch any of the differential operators to fourth-order accuracy via
+the \texttt{<Order>} template:
+
+\begin{lstlisting}[language={C++}]
+Field<double> lap_o4 = gridcalc::diff::laplacian<4>(psi);
+\end{lstlisting}
+
+\Cref{chap:higher-order-stencils} discusses the cost / accuracy
+trade-off in detail.
+
+\section{Functionals}
+
+Discrete integration via \texttt{func::integrate}; functional evaluation
+of $\int f(\psi, \nabla\psi, \nabla^2\psi)\,dV$ via \texttt{func::evaluate}
+(SFINAE-detected callable arity):
+
+\begin{lstlisting}[language={C++}]
+#include <gridcalc/func/Integrate.hpp>
+#include <gridcalc/func/Evaluate.hpp>
+
+double mass    = gridcalc::func::integrate(psi);
+double energy  = gridcalc::func::evaluate(
+    psi,
+    [](double p, const Vec3d& g) {
+        return 0.5 * g.squaredNorm() + 0.25 * (p*p - 1.0) * (p*p - 1.0);
+    });   // Ginzburg-Landau density f(psi, grad psi).
+\end{lstlisting}
+
+\Cref{chap:domain-integration} and \Cref{chap:functional-evaluation}
+cover the API in full.
+
+\section{Time integration}
+
+Phase 5 ships explicit Euler, Phase 6 ships generic tag-dispatched
+\texttt{solve::integrate} with \texttt{ExplicitEuler\{\}} and
+\texttt{RK4\{\}}. The \texttt{solve::diffuse} convenience driver wires
+the diffusion equation $\partial_t\psi = D\nabla^2\psi$ through your
+chosen integrator with an automatic CFL check:
+
+\begin{lstlisting}[language={C++}]
+#include <gridcalc/solve/Diffusion.hpp>
+#include <gridcalc/solve/Integrator.hpp>
+
+const double D = 0.1;
+const double dt = 0.01;
+gridcalc::solve::diffuse(psi, D, dt, /*n_steps=*/100,
+                         gridcalc::solve::RK4{});
+\end{lstlisting}
+
+\section{Higher-order spatial operators}
+
+Phase 8 ships every distinct partial up to total rank 4 (31 named
+functions), plus the biharmonic:
+
+\begin{lstlisting}[language={C++}]
+#include <gridcalc/diff/Biharmonic.hpp>
+#include <gridcalc/diff/FourthOrder.hpp>
+
+Field<double> bih   = gridcalc::diff::biharmonic<4>(psi);     // grad^4 psi
+Field<double> mixed = gridcalc::diff::d4dx2dy2<4>(psi);       // d^4/dx^2 dy^2
+\end{lstlisting}
+
+\Cref{chap:higher-order-derivatives} covers the d-prefix naming
+convention and the full operator set.
+
+\section{Verification}
+
+Phase 9 ships an FFT-based reference path under
+\texttt{gridcalc::spectral} for the cross-check:
+
+\begin{lstlisting}[language={C++}]
+#include <gridcalc/spectral/Derivatives.hpp>
+
+Field<double> fd_lap   = gridcalc::diff::laplacian<4>(psi);
+Field<double> spec_lap = gridcalc::spectral::laplacian(psi);
+// On smooth band-limited inputs, the FD-FFT discrepancy scales as O(h^p)
+// where p is the FD order. The CI cross-check fixture asserts this
+// permanently for every Phase 1-8 operator at every advertised order.
+\end{lstlisting}
+
+The spectral path is verification-only and not the production
+differentiation engine; \Cref{chap:spectral-verification-ug} explains
+the positioning.
