@@ -1,6 +1,192 @@
 \chapter{Functional evaluation}
 \label{chap:functional-evaluation}
 
-\textit{Absorbed from
-\path{docs/user-guide/notes/phase-4-functional-evaluation.md} in Phase
-10 Group 3. Placeholder until migrated.}
+\begin{quote}
+Spec dir:
+\passthrough{\lstinline!specs/2026-05-02-phase-4-functional-evaluation/!}.
+Version: \passthrough{\lstinline!0.4.0!}.
+\end{quote}
+
+\subsection{What this gives you}\label{what-this-gives-you}
+
+A primitive that evaluates a \textbf{functional} of a scalar field ---
+an integral of an arbitrary user-supplied integrand
+\(f(\psi, \nabla\psi, \nabla^2\psi)\) over the periodic Cartesian
+domain:
+
+\[
+F[\psi] \;=\; \int_{\Omega} f\bigl(\psi(\mathbf{x}),\, \nabla\psi(\mathbf{x}),\, \nabla^2\psi(\mathbf{x})\bigr)\, dV.
+\]
+
+\passthrough{\lstinline!evaluate!} builds on top of Phase 1's
+\passthrough{\lstinline!laplacian!}, Phase 2's
+\passthrough{\lstinline!gradient!}, and Phase 3's
+\passthrough{\lstinline!integrate!}: it materializes whichever
+derivatives your \passthrough{\lstinline!f!} actually needs, evaluates
+\passthrough{\lstinline!f!} pointwise into a temporary
+\passthrough{\lstinline!Field<double>!}, and reduces the result with the
+same pairwise / Kahan tag dispatch from Phase 3.
+
+\subsection{API}\label{api}
+
+Header:
+\href{../../../include/gridcalc/func/Functional.hpp}{\passthrough{\lstinline!include/gridcalc/func/Functional.hpp!}}.
+
+\begin{lstlisting}[language={C++}]
+namespace gridcalc::func {
+
+template <class F, class Tag = Pairwise>
+double evaluate(const core::Field<double>& psi, F&& f, Tag tag = {});
+
+}  // namespace gridcalc::func
+\end{lstlisting}
+
+Your callable \passthrough{\lstinline!f!} may take \textbf{any one of
+three signatures}, picked at compile time by
+\passthrough{\lstinline!std::is\_invocable\_r\_v!}:
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 2\tabcolsep) * \real{0.8361}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 2\tabcolsep) * \real{0.1639}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Signature
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Computes
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\passthrough{\lstinline!f(double psi)!} & only
+\passthrough{\lstinline!ψ!} --- gradient and Laplacian are
+\textbf{skipped} \\
+\passthrough{\lstinline!f(double psi, const Vec3d\& grad)!} &
+\passthrough{\lstinline!ψ!} and \passthrough{\lstinline!∇ψ!} ---
+Laplacian is \textbf{skipped} \\
+\passthrough{\lstinline!f(double psi, const Vec3d\& grad, double lap)!}
+& full triplet \passthrough{\lstinline!ψ!},
+\passthrough{\lstinline!∇ψ!}, \passthrough{\lstinline!∇²ψ!} \\
+\end{longtable}
+}
+
+Return type must be convertible to \passthrough{\lstinline!double!}. The
+reducer tag (\passthrough{\lstinline!Pairwise\{\}!} or
+\passthrough{\lstinline!Kahan\{\}!}) is forwarded to
+\passthrough{\lstinline!func::integrate!}.
+
+\subsection{Worked example: Ginzburg--Landau free
+energy}\label{worked-example-ginzburglandau-free-energy}
+
+The Ginzburg--Landau free-energy density is
+
+\[
+f_{\mathrm{GL}}(\psi, \nabla\psi) \;=\; \tfrac{1}{2} |\nabla\psi|^2 \;+\; W (\psi^2 - 1)^2,
+\]
+
+with \(W\) a positive constant. Note that \(f_{\mathrm{GL}}\) does
+\textbf{not} depend on \(\nabla^2\psi\), so writing it with the 2-arg
+signature lets \passthrough{\lstinline!evaluate!} skip the Laplacian
+computation.
+
+\subsubsection{Setup}\label{setup}
+
+\begin{lstlisting}[language={C++}]
+#include <cmath>
+#include <gridcalc/core/EigenAliases.hpp>
+#include <gridcalc/core/Field.hpp>
+#include <gridcalc/core/Grid.hpp>
+#include <gridcalc/func/Functional.hpp>
+
+using gridcalc::core::Field;
+using gridcalc::core::Grid;
+using gridcalc::core::Vec3d;
+using gridcalc::func::evaluate;
+
+constexpr double kPi = 3.14159265358979323846;
+
+const int N = 64;
+const double L = 2.0 * kPi;
+const double h = L / N;
+const double W = 1.0;
+
+Grid grid(N, N, N, Vec3d(h, h, h));
+Field<double> psi(grid, [](double x, double y, double z) {
+  return std::sin(x) * std::sin(y) * std::sin(z);
+});
+\end{lstlisting}
+
+\subsubsection{The integrand}\label{the-integrand}
+
+\begin{lstlisting}[language={C++}]
+auto gl_density = [W](double p, const Vec3d& g) {
+  const double dpsi2 = p * p - 1.0;
+  return 0.5 * g.squaredNorm() + W * dpsi2 * dpsi2;
+};
+\end{lstlisting}
+
+\subsubsection{Evaluate}\label{evaluate}
+
+\begin{lstlisting}[language={C++}]
+const double F = evaluate(psi, gl_density);
+\end{lstlisting}
+
+For this \passthrough{\lstinline!ψ!} with
+\passthrough{\lstinline!W = 1!}, the analytical reference is
+\(F = (3/2)\pi^3 + (411/64)\pi^3 = (507/64)\pi^3 \approx 245.62\). At
+\passthrough{\lstinline!N = 64!}, \passthrough{\lstinline!evaluate!}
+matches this to better than 0.5\% relative error; the discrete error is
+dominated by the squared-gradient term and converges at order 2 in \(h\)
+(verified by
+\href{../../../test/functional_test.cpp}{\passthrough{\lstinline!test/functional\_test.cpp!}}'s
+\passthrough{\lstinline!GinzburgLandauSecondOrderConvergence!} test).
+
+For the why-this-formula-converges-at-order-2 background --- derivation,
+error analysis, references --- see
+\href{../../developer-note/notes/phase-4-functional-evaluation.md}{\passthrough{\lstinline!docs/developer-note/notes/phase-4-functional-evaluation.md!}}.
+
+\subsection{\texorpdfstring{What this does \emph{not} do
+(yet)}{What this does not do (yet)}}\label{what-this-does-not-do-yet}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{No vector-field functionals.}
+  \passthrough{\lstinline!evaluate(Field<Vec3d>, …)!} arrives in Phase
+  11+ when the higher-rank functionals first need it.
+\item
+  \textbf{No higher-order derivatives in \passthrough{\lstinline!f!}.}
+  Phase 6 adds biharmonic and mixed partials; Phase 11 adds
+  up-to-4th-order gradients.
+\item
+  \textbf{No variational derivative \passthrough{\lstinline!δF/δψ!}.}
+  Phase 12 (CH demo) adds closed-form variational derivatives where they
+  are needed.
+\item
+  \textbf{No fused-loop optimization.}
+  \passthrough{\lstinline!evaluate!} materializes intermediate Fields
+  for \passthrough{\lstinline!∇ψ!} and/or \passthrough{\lstinline!∇²ψ!}.
+  Phase 11+ replaces this with expression-template fusion.
+\end{itemize}
+
+\subsection{Quick reference: which arity to
+pick}\label{quick-reference-which-arity-to-pick}
+
+\begin{itemize}
+\tightlist
+\item
+  Integrand depends only on \passthrough{\lstinline!ψ!} (e.g.,
+  \passthrough{\lstinline!∫ ψ² dV!},
+  \passthrough{\lstinline!∫ W(ψ²-1)² dV!}): use
+  \passthrough{\lstinline!f(double)!}. Saves both stencil computations.
+\item
+  Integrand uses \passthrough{\lstinline!∇ψ!} (e.g., the gradient term
+  of any GL-style energy): use
+  \passthrough{\lstinline!f(double, const Vec3d\&)!}. Saves the
+  Laplacian.
+\item
+  Integrand uses \passthrough{\lstinline!∇²ψ!} (Cahn--Hilliard kernel,
+  surface-tension derivatives): use
+  \passthrough{\lstinline!f(double, const Vec3d\&, double)!}.
+\end{itemize}

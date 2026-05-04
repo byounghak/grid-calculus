@@ -1,6 +1,354 @@
 \chapter{Spectral verification harness}
-\label{chap:dev-spectral-verification}
+\label{chap:dev:spectral-verification-harness}
 
-\textit{Absorbed from
-\path{docs/developer-note/notes/phase-9-spectral-verification.md} in
-Phase 10 Group 4. Placeholder until migrated.}
+\begin{quote}
+Phase metadata. Spec dir:
+\passthrough{\lstinline!specs/2026-05-03-phase-9-spectral-verification/!}.
+Adds the \passthrough{\lstinline!gridcalc::spectral!} namespace
+(vendored PocketFFT-backed), the
+\passthrough{\lstinline!spectral::partial<Nx, Ny, Nz>!} generic operator
++ named
+\passthrough{\lstinline!spectral::\{laplacian, biharmonic, gradient\}!}
+wrappers, and the permanent FD--FFT cross-check CI gate covering every
+Phase 1--8 operator. Version target: \passthrough{\lstinline!0.9.0!}.
+Build flag: \passthrough{\lstinline!-DGRIDCALC\_USE\_FFT=ON!} (default).
+\end{quote}
+
+\subsection{1. Theory}\label{theory}
+
+\subsubsection{Spectral derivative on a periodic
+grid}\label{spectral-derivative-on-a-periodic-grid}
+
+For a continuous, integrable, real, \(L\)-periodic function
+\(\psi : [0, L)^3 \to \mathbb{R}\), the Fourier expansion
+
+\[
+\psi(\mathbf{x}) \;=\; \sum_{\mathbf{n} \in \mathbb{Z}^3} \widehat\psi_{\mathbf{n}}\,e^{i\mathbf{k}_{\mathbf{n}}\cdot\mathbf{x}}, \qquad \mathbf{k}_{\mathbf{n}} \;=\; \tfrac{2\pi}{L}\,\mathbf{n},
+\]
+
+makes differentiation diagonal: the multi-index partial
+\(\partial^{\boldsymbol\alpha}\psi\) has Fourier coefficient
+\((i\mathbf{k}_{\mathbf{n}})^{\boldsymbol\alpha}\,\widehat\psi_{\mathbf{n}}\).
+Numerically: forward FFT, multiply each mode by
+\((ik_x)^{n_x}(ik_y)^{n_y}(ik_z)^{n_z}\), inverse FFT.
+
+\textbf{For a band-limited input on the discrete grid} (one whose
+Fourier support is strictly below the Nyquist), the discrete spectral
+derivative \textbf{equals} the continuum derivative to machine precision
+(modulo FFT round-off). This is the property that makes the spectral
+path a useful gold standard for verifying the FD operators: any FD--FFT
+discrepancy on a band-limited input is FD truncation error, not spectral
+artifact.
+
+\subsubsection{Wavenumber sign
+convention}\label{wavenumber-sign-convention}
+
+The standard \passthrough{\lstinline!numpy.fft!}-style mapping for a
+length-\(N\) full spectrum returned by an FFT:
+
+\[
+n^{\text{signed}} \;=\; \begin{cases} n & \text{if } n < N/2,\\ n - N & \text{otherwise},\end{cases} \qquad k[n] \;=\; \frac{2\pi}{N\,h}\,n^{\text{signed}}.
+\]
+
+This yields \(k[0] = 0\), \(k[1] = +2\pi/(Nh)\), \ldots,
+\(k[N/2 - 1] = +(N/2 - 1)\,2\pi/(Nh)\), \(k[N/2] = -\pi/h\) (or
+\(+\pi/h\) --- \emph{sign ambiguous}),
+\(k[N/2 + 1] = -(N/2 - 1)\,2\pi/(Nh)\), \ldots,
+\(k[N - 1] = -2\pi/(Nh)\).
+
+For the rfft (real-input r2c) on the x-axis, the half-spectrum stores
+only the non-negative-frequency modes \(n_x \in [0, N_x/2]\) with
+\(k_x[n_x] = 2\pi n_x / (N_x h_x)\).
+
+\subsubsection{Nyquist aliasing for odd-rank
+derivatives}\label{nyquist-aliasing-for-odd-rank-derivatives}
+
+The Nyquist mode \(n^{\text{signed}} = -N/2 \equiv +N/2 \pmod N\) is the
+only mode whose signed wavenumber is genuinely ambiguous on the discrete
+grid: \(\cos((-N/2)\,\xi) = \cos((+N/2)\,\xi)\) for any grid sample
+\(\xi = 2\pi i / N\). For an \textbf{odd}-rank derivative the spectral
+multiplier \((ik)^N\) flips sign with \(k \to -k\), so the Nyquist mode
+aliases to a sign that is determined by the convention rather than by
+the data --- i.e., applying \((ik_a)^{N_a}\) at the Nyquist on an
+odd-rank axis \(a\) injects a high-frequency artifact into the inverse
+transform.
+
+The standard remedy, used here: \textbf{zero the Nyquist mode on any
+axis whose per-axis derivative count is odd}, before applying the
+spectral multiplier. For even-rank axes, \((ik)^N\) at the Nyquist
+evaluates to \((ik)^N|_{k=\pm\pi/h} = (\pm i)^N (\pi/h)^N\), which is
+independent of sign when \(N\) is even, so no zeroing is needed.
+
+\subsection{2. Math derivation}\label{math-derivation}
+
+\subsubsection{FD--FFT discrepancy on a single trig
+mode}\label{fdfft-discrepancy-on-a-single-trig-mode}
+
+Let \(\psi(\mathbf{x}) = \sin(\mathbf{k}\cdot\mathbf{x})\) with
+\(|\mathbf{k}| \ll N/(2h_a)\) for every axis (band-limited well below
+the Nyquist). Fix a multi-index \(\boldsymbol\alpha\) and let
+\(D^{\boldsymbol\alpha}_p\) be a central finite-difference stencil of
+accuracy order \(p\) targeting \(\partial^{\boldsymbol\alpha}\). The
+continuum partial is
+
+\[
+\partial^{\boldsymbol\alpha}\psi(\mathbf{x}) \;=\; |\mathbf{k}|^{|\boldsymbol\alpha|}\,T_{\boldsymbol\alpha}(\mathbf{k}\cdot\mathbf{x}),
+\]
+
+where \(T_{\boldsymbol\alpha}\) is one of \(\pm \sin\) or \(\pm \cos\)
+depending on \(|\boldsymbol\alpha|\). The spectral discrete derivative
+on the grid recovers this \textbf{exactly} (to FFT round-off) because
+the input is band-limited. The FD discrete derivative satisfies, by
+Taylor expansion of the stencil's error term,
+
+\[
+(D^{\boldsymbol\alpha}_p\psi)(\mathbf{x}_{ijk}) \;=\; \partial^{\boldsymbol\alpha}\psi(\mathbf{x}_{ijk}) \;+\; C_{\boldsymbol\alpha,p}\,h^p\,|\mathbf{k}|^{|\boldsymbol\alpha| + p}\,\widetilde T(\mathbf{k}\cdot\mathbf{x}_{ijk}) \;+\; \mathcal{O}(h^{p+2}),
+\]
+
+with \(C_{\boldsymbol\alpha,p}\) a stencil-specific constant and
+\(\widetilde T\) another trig function. Therefore the discrete FD--FFT
+discrepancy is dominated by the FD truncation:
+
+\[
+\max_{i,j,k}\,\bigl|(D^{\boldsymbol\alpha}_p\psi)_{ijk} - (\partial^{\boldsymbol\alpha}\psi)_{ijk}\bigr| \;=\; |C_{\boldsymbol\alpha,p}|\,|\mathbf{k}|^{|\boldsymbol\alpha| + p}\,h^p \;+\; \mathcal{O}(h^{p+2}),
+\]
+
+i.e., relative max-norm discrepancy scales as \(\mathcal{O}(h^p)\). This
+is precisely the slope the cross-check fixture asserts: log-log slope on
+\(N \in \{16, 32, 64, 128\}\) in \([p - 0.5, p + 0.5]\).
+
+\subsubsection{\texorpdfstring{Why \(\mathbf{k} = (1, 1, 1)\) on
+\([0, 2\pi)^3\) is
+safe}{Why \textbackslash mathbf\{k\} = (1, 1, 1) on {[}0, 2\textbackslash pi)\^{}3 is safe}}\label{why-mathbfk-1-1-1-on-0-2pi3-is-safe}
+
+At \(N = 16\), the per-axis Nyquist is \(N/2 = 8\). The manufactured
+solution \(\psi = \sin(x + y + z)\) has Fourier support exactly at
+\(\mathbf{k} = (1, 1, 1)\), which is comfortably below the Nyquist on
+every axis at every grid in the sweep. The spectral path therefore has
+zero aliasing error and the FD--FFT discrepancy is FD truncation alone.
+
+\subsection{3. Algorithm}\label{algorithm}
+
+\subsubsection{File layout}\label{file-layout}
+
+\begin{itemize}
+\tightlist
+\item
+  \href{../../../extern/pocketfft/pocketfft_hdronly.h}{\passthrough{\lstinline!extern/pocketfft/pocketfft\_hdronly.h!}}
+  --- vendored upstream header (BSD 3-Clause). Revision recorded in
+  \href{../../../extern/pocketfft/VERSION.txt}{\passthrough{\lstinline!extern/pocketfft/VERSION.txt!}}.
+\item
+  \href{../../../include/gridcalc/spectral/Wavenumbers.hpp}{\passthrough{\lstinline!include/gridcalc/spectral/Wavenumbers.hpp!}}
+  --- \passthrough{\lstinline!kxRfft!},
+  \passthrough{\lstinline!kyFull!}, \passthrough{\lstinline!kzFull!}.
+  Builds per-axis \(k\) vectors per the conventions in §1.
+\item
+  \href{../../../include/gridcalc/spectral/Fft.hpp}{\passthrough{\lstinline!include/gridcalc/spectral/Fft.hpp!}}
+  --- \passthrough{\lstinline!forwardR2C!},
+  \passthrough{\lstinline!backwardC2R!}. Calls PocketFFT with
+  column-major (i-fastest) byte strides matching
+  \passthrough{\lstinline!Field<double>!}'s storage layout.
+  \passthrough{\lstinline!axes = \{2, 1, 0\}!} so the rfft compresses
+  axis 0 (the x-axis).
+\item
+  \href{../../../include/gridcalc/spectral/Derivatives.hpp}{\passthrough{\lstinline!include/gridcalc/spectral/Derivatives.hpp!}}
+  --- \passthrough{\lstinline!partial<Nx, Ny, Nz>!} (the generic
+  operator) + named wrappers.
+\item
+  \href{../../../test/fd_fft_crosscheck_test.cpp}{\passthrough{\lstinline!test/fd\_fft\_crosscheck\_test.cpp!}}
+  --- the 70-test parameterized cross-check fixture (the permanent CI
+  gate).
+\item
+  \href{../../../test/spectral_basic_test.cpp}{\passthrough{\lstinline!test/spectral\_basic\_test.cpp!}}
+  --- round-trip + named-wrapper smoke tests + Nyquist-zeroing audit.
+\end{itemize}
+
+\subsubsection{\texorpdfstring{\texttt{spectral::partial\textless{}Nx,\ Ny,\ Nz\textgreater{}(field)}}{spectral::partial\textless Nx, Ny, Nz\textgreater(field)}}\label{spectralpartialnx-ny-nzfield}
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  \passthrough{\lstinline!forwardR2C(field)!} produces the
+  half-compressed spectrum of shape
+  \passthrough{\lstinline!(Nx/2+1) × Ny × Nz!}, i-fastest layout.
+\item
+  Build per-axis \(k\) vectors via
+  \passthrough{\lstinline!Wavenumbers.hpp!}.
+\item
+  Triple-nested loop over \((n_z, n_y, n_x)\). At each spectrum element,
+  compute the multiplier \(i^{N}\,k_x^{N_x}\,k_y^{N_y}\,k_z^{N_z}\)
+  where \(N = N_x + N_y + N_z\). The leading \(i^N\) is one of
+  \(\{1, i, -1, -i\}\) from a
+  \passthrough{\lstinline!switch (total \% 4)!}.
+\item
+  \textbf{Nyquist zeroing}: at each axis \(a\) with \(N_a\) odd and
+  \(N_a^{\text{grid}}\) even, set the multiplier to zero when the
+  spectrum index equals \(N_a^{\text{grid}}/2\).
+\item
+  \passthrough{\lstinline!backwardC2R(spectrum, grid)!}
+  inverse-transforms (with the \(1/(N_x N_y N_z)\) normalization that
+  matches the unnormalized forward).
+\end{enumerate}
+
+Per-call work: 1 forward FFT (\(\mathcal{O}(N^3 \log N)\)) + spectrum
+scan (\(\mathcal{O}(N^3)\)) + 1 backward FFT.
+
+\subsubsection{\texorpdfstring{\texttt{spectral::laplacian(field)} and
+\texttt{spectral::biharmonic(field)}}{spectral::laplacian(field) and spectral::biharmonic(field)}}\label{spectrallaplacianfield-and-spectralbiharmonicfield}
+
+Single forward + single backward FFT (vs three of each for the
+\passthrough{\lstinline!partial<2,0,0> + partial<0,2,0> + partial<0,0,2>!}
+composition). The spectrum is multiplied by \(-|\mathbf{k}|^2\) or
+\(|\mathbf{k}|^4\) in one fused pass, no Nyquist zeroing needed (even
+rank).
+
+\subsubsection{\texorpdfstring{\texttt{spectral::gradient(field)}}{spectral::gradient(field)}}\label{spectralgradientfield}
+
+One forward FFT + three backward FFTs. The base spectrum is computed
+once; three copies are made and each is multiplied by \(ik_a\) with
+per-axis Nyquist zeroing on axis \(a\). The three real fields are packed
+into a \passthrough{\lstinline!Field<Vec3d>!} in a final pass.
+
+\subsubsection{Cross-check fixture
+structure}\label{cross-check-fixture-structure}
+
+\href{../../../test/fd_fft_crosscheck_test.cpp}{\passthrough{\lstinline!test/fd\_fft\_crosscheck\_test.cpp!}}
+defines three macros that generate
+\passthrough{\lstinline!TEST(FdFftCrossCheck, ...)!}:
+
+\begin{itemize}
+\tightlist
+\item
+  \passthrough{\lstinline!EXPECT\_FD\_FFT\_PARTIAL(NAME, NX, NY, NZ, ORDER)!}
+  --- for the 31 d-prefix partials; cross-checks
+  \passthrough{\lstinline!gd::NAME<ORDER>(f)!} against
+  \passthrough{\lstinline!gs::partial<NX, NY, NZ>(f)!}.
+\item
+  \passthrough{\lstinline!EXPECT\_FD\_FFT\_NAMED(TAG, FD\_EXPR, SP\_EXPR, ORDER)!}
+  --- for \passthrough{\lstinline!laplacian!} and
+  \passthrough{\lstinline!biharmonic!} (matched against named spectral
+  wrappers).
+\item
+  \passthrough{\lstinline!EXPECT\_FD\_FFT\_GRADIENT(ORDER)!} and
+  \passthrough{\lstinline!EXPECT\_FD\_FFT\_DIVERGENCE(ORDER)!} --- for
+  the \passthrough{\lstinline!Field<Vec3d>!}-valued / -consuming Phase 2
+  operators.
+\end{itemize}
+
+Each test runs the sweep on \(N \in \{16, 32, 64, 128\}\) and asserts
+the log-log slope of the relative max-norm discrepancy on
+\(\psi = \sin(x + y + z)\) lies in
+\([\text{Order} - 0.5, \text{Order} + 0.5]\). Total: 70 tests;
+\textasciitilde116 s on the local machine; fits CI's 2-minute budget.
+
+\subsection{4. Design decisions}\label{design-decisions}
+
+These distill the choices recorded in
+\passthrough{\lstinline!specs/2026-05-03-phase-9-spectral-verification/requirements.md!}.
+
+\begin{itemize}
+\item
+  \textbf{Vendored PocketFFT vs \passthrough{\lstinline!FetchContent!}.}
+  Vendored under \passthrough{\lstinline!extern/pocketfft/!}. Build
+  determinism without network access matters for the project's
+  ``production / industrial'' target, more than the upgrade-by-one-line
+  convenience of \passthrough{\lstinline!FetchContent!}. The vendored
+  revision is recorded in
+  \passthrough{\lstinline!extern/pocketfft/VERSION.txt!}. (Note: the
+  file is named \passthrough{\lstinline!VERSION.txt!}, not
+  \passthrough{\lstinline!VERSION!}, because a bare
+  \passthrough{\lstinline!VERSION!} in a SYSTEM include path shadows the
+  C++ standard \passthrough{\lstinline!<version>!} header on
+  case-insensitive filesystems.)
+\item
+  \textbf{Hybrid API: generic helper + named wrappers, \emph{not} full
+  d-prefix named family.} Phase 8 ships 31 named partials; mirroring all
+  of them in \passthrough{\lstinline!gridcalc::spectral!} would double
+  the surface for tests-only consumers. The cross-check fixture
+  instantiates the matching multi-index from each FD operator's tag, so
+  no per-operator named spectral function is needed beyond
+  \passthrough{\lstinline!laplacian!},
+  \passthrough{\lstinline!biharmonic!},
+  \passthrough{\lstinline!gradient!} (which already have non-d-prefix
+  conventional names).
+\item
+  \textbf{rfft (real-to-complex) over c2c.} \textasciitilde2× cheaper
+  memory and time on real input; the half-compressed
+  \passthrough{\lstinline!(Nx/2+1) × Ny × Nz!} spectrum lays out cleanly
+  with column-major byte strides matching Phase 1's i-fastest
+  \passthrough{\lstinline!Field!} layout. PocketFFT is invoked with
+  \passthrough{\lstinline!axes = \{2, 1, 0\}!} so the rfft compresses
+  axis 0 (x).
+\item
+  \textbf{N ∈ \{16, 32, 64, 128\} sweep.} Adds a fourth data point
+  compared to Phases 1, 2, 7, 8's
+  \passthrough{\lstinline!\{16, 32, 64\}!} triplet. Slope confidence is
+  higher on four points, and FFT cost at \(N = 128\) stays within CI's
+  2-minute budget for the 70 cross-check tests (\textasciitilde116 s
+  observed locally).
+\item
+  \textbf{Nyquist zeroing for odd-rank axes only.} Even-rank multipliers
+  \((ik)^N|_{k = \pm\pi/h}\) are sign-independent, so no zeroing is
+  needed. The choice is encoded once in
+  \passthrough{\lstinline!spectral::partial!}, not duplicated per named
+  operator.
+\item
+  \textbf{\passthrough{\lstinline!spectral::*!} as verification-only,
+  not production.} Documented in every spectral header's file-level
+  Doxygen block, in the User Guide note, and in
+  \passthrough{\lstinline!mission.md!} /
+  \passthrough{\lstinline!roadmap.md!} /
+  \passthrough{\lstinline!tech-stack.md!}. The FD operators in
+  \passthrough{\lstinline!gridcalc::diff!} are the production
+  differentiation engine.
+\end{itemize}
+
+\subsection{5. References}\label{references}
+
+External:
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{PocketFFT} (Reinecke, Bell). Header-only C++ FFT library,
+  BSD-3-Clause. Upstream:
+  \url{https://gitlab.mpcdf.mpg.de/mtr/pocketfft}. Vendored revision
+  recorded in \passthrough{\lstinline!extern/pocketfft/VERSION.txt!}.
+\item
+  \textbf{Trefethen, L. N. (2000). \emph{Spectral Methods in MATLAB}.
+  SIAM.} ISBN 978-0-89871-465-4.
+  \url{https://doi.org/10.1137/1.9780898719598}. Chapter 3 (``Periodic
+  grids: the semicircle and the FFT'') establishes the equivalence of
+  trigonometric interpolation and Fourier-mode differentiation on a
+  uniform periodic grid, and discusses the Nyquist ambiguity that
+  motivates the odd-rank zeroing convention used in
+  \passthrough{\lstinline!spectral::partial!}.
+\item
+  \textbf{Frigo, M., \& Johnson, S. G. (2005). \emph{The Design and
+  Implementation of FFTW3}. Proceedings of the IEEE, 93(2), 216--231.}
+  \url{https://doi.org/10.1109/JPROC.2004.840301}. Canonical reference
+  for the real-input wavenumber-layout convention used by both FFTW and
+  PocketFFT, and for the column-major / row-major stride machinery the
+  \passthrough{\lstinline!Fft.hpp!} wrapper relies on.
+\item
+  \textbf{Boyd, J. P. (2001). \emph{Chebyshev and Fourier Spectral
+  Methods} (2nd ed.). Dover.} Permanent URL:
+  \url{https://depts.washington.edu/ph506/Boyd.pdf}. The canonical
+  statement of the band-limited-input requirement that underwrites the
+  spectral-as-gold-standard argument in §1 and the choice of
+  \(\mathbf{k} = (1, 1, 1)\) as the manufactured solution in §2.
+\end{itemize}
+
+Internal cross-references (do not satisfy the ``external'' minimum):
+
+\begin{itemize}
+\tightlist
+\item
+  \href{phase-7-higher-order-stencils.md}{\passthrough{\lstinline!docs/developer-note/notes/phase-7-higher-order-stencils.md!}}
+  --- for the truncation-order analysis the cross-check fixture
+  exercises.
+\item
+  \href{phase-8-higher-order-derivatives.md}{\passthrough{\lstinline!docs/developer-note/notes/phase-8-higher-order-derivatives.md!}}
+  --- for the Phase 8 d-prefix partials this phase cross-checks.
+\end{itemize}

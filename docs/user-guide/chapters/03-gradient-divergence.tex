@@ -1,5 +1,150 @@
 \chapter{Gradient and divergence}
-\label{chap:gradient-divergence}
+\label{chap:gradient-and-divergence}
 
-\textit{Absorbed from \path{docs/user-guide/notes/phase-2-gradient-divergence.md}
-in Phase 10 Group 3. Placeholder until migrated.}
+\begin{quote}
+Spec dir:
+\passthrough{\lstinline!specs/2026-05-02-phase-2-gradient-divergence/!}.
+Version: \passthrough{\lstinline!0.2.0!}. \emph{Note: this note was
+written retroactively after Phase 4 (see specs/STATUS.md ``Decisions
+worth knowing'').}
+\end{quote}
+
+\subsection{What this gives you}\label{what-this-gives-you}
+
+The basic first-order vector operators on a periodic scalar field:
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Gradient:}
+  \passthrough{\lstinline!gradient(ψ) -> Field<Vec3d>!}. At each grid
+  point, returns the Cartesian triple
+  \((\partial_x \psi,\, \partial_y \psi,\, \partial_z \psi)\).
+\item
+  \textbf{Divergence:}
+  \passthrough{\lstinline!divergence(V) -> Field<double>!}. For a vector
+  field \(\mathbf{V}\) stored as \passthrough{\lstinline!Field<Vec3d>!},
+  returns \(\partial_x V_x + \partial_y V_y + \partial_z V_z\) at each
+  grid point.
+\end{itemize}
+
+Both are 2nd-order accurate central differences applied per axis, with
+periodic wrap delegated to the input \passthrough{\lstinline!Field!}'s
+\passthrough{\lstinline!Policy!} (\passthrough{\lstinline!Periodic!}
+from Phase 1 onward).
+
+\subsection{API}\label{api}
+
+Headers:
+\href{../../../include/gridcalc/diff/Gradient.hpp}{\passthrough{\lstinline!include/gridcalc/diff/Gradient.hpp!}},
+\href{../../../include/gridcalc/diff/Divergence.hpp}{\passthrough{\lstinline!include/gridcalc/diff/Divergence.hpp!}},
+\href{../../../include/gridcalc/stencil/FirstDerivative.hpp}{\passthrough{\lstinline!include/gridcalc/stencil/FirstDerivative.hpp!}},
+\href{../../../include/gridcalc/core/EigenAliases.hpp}{\passthrough{\lstinline!include/gridcalc/core/EigenAliases.hpp!}}.
+
+\begin{lstlisting}[language={C++}]
+namespace gridcalc::core {
+using Vec3d = Eigen::Vector3d;
+}
+
+namespace gridcalc::diff {
+
+core::Field<core::Vec3d> gradient   (const core::Field<double>&)         noexcept;
+core::Field<double>      divergence (const core::Field<core::Vec3d>&)    noexcept;
+
+}  // namespace gridcalc::diff
+\end{lstlisting}
+
+The \passthrough{\lstinline!Vec3d!} alias was relocated from
+\passthrough{\lstinline!core/Grid.hpp!} (Phase 1) to
+\passthrough{\lstinline!core/EigenAliases.hpp!} in Phase 2 once a second
+operator needed it. The fully-qualified name
+\passthrough{\lstinline!gridcalc::core::Vec3d!} is unchanged from Phase
+1.
+
+\subsection{Worked example}\label{worked-example}
+
+Compute a gradient, then a divergence, then verify that
+\(\nabla \cdot \nabla \psi\) converges to \(\nabla^2 \psi\) at order 2:
+
+\begin{lstlisting}[language={C++}]
+#include <cmath>
+#include <gridcalc/core/EigenAliases.hpp>
+#include <gridcalc/core/Field.hpp>
+#include <gridcalc/core/Grid.hpp>
+#include <gridcalc/diff/Divergence.hpp>
+#include <gridcalc/diff/Gradient.hpp>
+#include <gridcalc/diff/Laplacian.hpp>
+
+using gridcalc::core::Field;
+using gridcalc::core::Grid;
+using gridcalc::core::Vec3d;
+using gridcalc::diff::divergence;
+using gridcalc::diff::gradient;
+using gridcalc::diff::laplacian;
+
+constexpr double kPi = 3.14159265358979323846;
+
+const int N = 32;
+const double L = 2.0 * kPi;
+const double h = L / N;
+
+Grid grid(N, N, N, Vec3d(h, h, h));
+Field<double> psi(grid, [](double x, double y, double z) {
+  return std::sin(x) * std::sin(y) * std::sin(z);
+});
+
+Field<Vec3d>  grad_psi  = gradient(psi);
+Field<double> lap_psi   = laplacian(psi);
+Field<double> indirect  = divergence(grad_psi);
+// indirect ~ lap_psi at order 2 in h, but the two are *not* identically
+// equal at finite h -- divergence(gradient(psi)) is a stride-2 stencil
+// while laplacian(psi) is a 3-point stencil. They share the same
+// continuum limit but have different leading-order error constants.
+\end{lstlisting}
+
+\subsection{Vector-field example for
+divergence}\label{vector-field-example-for-divergence}
+
+\passthrough{\lstinline!divergence!} takes any
+\passthrough{\lstinline!Field<Vec3d>!}, not only one produced by
+\passthrough{\lstinline!gradient!}. For
+\(\mathbf{V} = (\sin x \cos y,\, \cos x \sin y,\, \sin z)\) on
+\([0, 2\pi]^3\), the analytical divergence is
+\(2\cos x \cos y + \cos z\):
+
+\begin{lstlisting}[language={C++}]
+Field<Vec3d> V(grid, [](double x, double y, double z) {
+  return Vec3d(std::sin(x) * std::cos(y),
+               std::cos(x) * std::sin(y),
+               std::sin(z));
+});
+Field<double> div_V = divergence(V);
+// div_V ~ 2 cos(x) cos(y) + cos(z), with relative max-norm error O(h^2).
+\end{lstlisting}
+
+\subsection{\texorpdfstring{What this does \emph{not} do
+(yet)}{What this does not do (yet)}}\label{what-this-does-not-do-yet}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{No curl operator.} Vector calculus on
+  \passthrough{\lstinline!Field<Vec3d>!} beyond divergence arrives in
+  later phases.
+\item
+  \textbf{No 4th-order accuracy.}
+  \passthrough{\lstinline!stencil::FirstDerivative<4>!} is deferred to
+  Phase 7 alongside \passthrough{\lstinline!Coefficients<4>!}.
+\item
+  \textbf{Only periodic wrap.} Dirichlet / Neumann gradients arrive in
+  Phase 18.
+\item
+  \textbf{No per-component-decomposition helper.}
+  \passthrough{\lstinline!Field<Vec3d>!} is the canonical gradient
+  return; iterate over it and project per axis if you need a
+  \passthrough{\lstinline!Field<double>!} for one component.
+\end{itemize}
+
+For the why-divergence(gradient)-isn't-laplacian background and the full
+error analysis --- see
+\href{../../developer-note/notes/phase-2-gradient-divergence.md}{\passthrough{\lstinline!docs/developer-note/notes/phase-2-gradient-divergence.md!}}.

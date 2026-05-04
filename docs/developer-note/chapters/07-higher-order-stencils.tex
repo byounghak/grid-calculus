@@ -1,6 +1,378 @@
 \chapter{Higher-order accuracy stencils}
-\label{chap:dev-higher-order-stencils}
+\label{chap:dev:higher-order-accuracy-stencils}
 
-\textit{Absorbed from
-\path{docs/developer-note/notes/phase-7-higher-order-stencils.md} in
-Phase 10 Group 4. Placeholder until migrated.}
+\begin{quote}
+Phase metadata. Spec dir:
+\passthrough{\lstinline!specs/2026-05-03-phase-7-higher-order-stencils/!}.
+Adds \passthrough{\lstinline!stencil::Coefficients<4>!},
+\passthrough{\lstinline!stencil::FirstDerivative<4>!}, and templates
+\passthrough{\lstinline!diff::laplacian!},
+\passthrough{\lstinline!diff::gradient!},
+\passthrough{\lstinline!diff::divergence!} on an
+\passthrough{\lstinline!Order!} parameter (default
+\passthrough{\lstinline!2!}). Version target:
+\passthrough{\lstinline!0.7.0!}.
+\end{quote}
+
+\subsection{1. Theory}\label{theory}
+
+Central-difference stencils approximate a derivative at \(x_i\) as a
+weighted sum of samples at \(x_{i-r}, x_{i-r+1}, \ldots, x_{i+r}\). The
+weights \(w_m\) are chosen so the weighted sum matches the target
+derivative through some order in the Taylor expansion of \(f\) around
+\(x_i\).
+
+Two \textbf{symmetry constraints} organize the family:
+
+\begin{itemize}
+\tightlist
+\item
+  For an \textbf{odd} derivative (\(\partial^k\) with \(k\) odd), the
+  stencil is \textbf{anti-symmetric}: \(w_{-m} = -w_m\), so the center
+  weight \(w_0\) is exactly zero. This is why
+  \passthrough{\lstinline!FirstDerivative<2>::weights[1] = 0!} and
+  \passthrough{\lstinline!FirstDerivative<4>::weights[2] = 0!}.
+\item
+  For an \textbf{even} derivative, the stencil is \textbf{symmetric}:
+  \(w_{-m} = +w_m\), with no constraint on \(w_0\).
+\end{itemize}
+
+Doubling the half-width \(r\) buys two more matched Taylor orders by
+symmetry --- odd-order error terms cancel automatically. So central
+differences come in \textbf{even} truncation orders only: 2, 4, 6,
+\ldots{} There is no order-3 symmetric central-difference stencil for
+these derivatives; an order-3 method would have to be asymmetric
+(upwind), which is a different design space.
+
+For the Phase 1 \passthrough{\lstinline!Grid!} (Cartesian-orthogonal
+with per-axis cell sizes \(h_x, h_y, h_z\)), the 3D Laplacian decomposes
+into independent per-axis 1D second-derivative stencils:
+
+\[
+\nabla^2_h \psi_{ijk} \;=\; \sum_{a \in \{x,y,z\}} \frac{1}{h_a^2}\,\sum_{m=-r}^{+r} w_m\,\psi(\mathbf{x}_{ijk} + m\,h_a\,\hat{\mathbf{e}}_a),
+\]
+
+with the same weight table \(\{w_m\}\) on every axis (because the
+weights are unitless --- they only depend on the integer offsets
+\(\{-r, \ldots, +r\}\), not on \(h_a\)). This is what lets one
+\passthrough{\lstinline!Coefficients<Order>!} table drive the operator
+on \textbf{anisotropic Cartesian-orthogonal} grids without any per-axis
+customization.
+
+\subsection{2. Math derivation}\label{math-derivation}
+
+\subsubsection{Order-4 second-derivative
+stencil}\label{order-4-second-derivative-stencil}
+
+We want \(\partial^2 f / \partial x^2\) at \(x_i\) from the symmetric
+stencil
+
+\[
+\partial^2_x f(x_i) \;\approx\; \frac{1}{h^2}\,\sum_{m=-2}^{2} w_m\,f(x_{i+m})
+\;=\; \frac{1}{h^2}\bigl[w_{-2} f_{i-2} + w_{-1} f_{i-1} + w_0 f_i + w_1 f_{i+1} + w_2 f_{i+2}\bigr].
+\]
+
+Symmetry: \(w_{-m} = w_m\). Three free parameters: \(w_0\),
+\(w_1 = w_{-1}\), \(w_2 = w_{-2}\).
+
+Taylor-expand around \(x_i\):
+
+\[
+f(x_i + m\,h) \;=\; \sum_{p \ge 0} \frac{(m\,h)^p}{p!}\,f^{(p)}(x_i).
+\]
+
+The weighted sum is
+
+\[
+\sum_m w_m\,f(x_i + m\,h) \;=\; \sum_{p \ge 0} \frac{h^p}{p!}\,f^{(p)}(x_i)\,\underbrace{\sum_m w_m\,m^p}_{\,M_p\,}.
+\]
+
+By symmetry \(M_p = 0\) for \textbf{odd} \(p\) --- the odd Taylor terms
+cancel automatically. The remaining moment conditions for an order-4
+approximation of \(\partial^2 f / \partial x^2\) are:
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.1111}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.2222}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.6667}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+moment
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+required value
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+reason
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\(M_0 = w_0 + 2 w_1 + 2 w_2\) & \passthrough{\lstinline!0!} & kill the
+constant (no \(f\) leak) \\
+\(M_2 = 2 w_1 + 8 w_2\) & \passthrough{\lstinline!2!} & match
+\(h^2 \cdot f''(x_i) \cdot (1/2)\) → coefficient
+\passthrough{\lstinline!2!} after multiplying by
+\passthrough{\lstinline"2!/h²"} \\
+\(M_4 = 2 w_1 + 32 w_2\) & \passthrough{\lstinline!0!} & kill the
+\(h^4\) term to lift accuracy from \(O(h^2)\) to \(O(h^4)\) \\
+\end{longtable}
+}
+
+Solving:
+
+\begin{itemize}
+\tightlist
+\item
+  From \(M_2\) and \(M_4\): subtract → \(24 w_2 = -2\), so
+  \(w_2 = -1/12\).
+\item
+  Back into \(M_2\): \(2 w_1 + 8 \cdot (-1/12) = 2\) →
+  \(w_1 = (2 + 2/3)/2 = 4/3\).
+\item
+  From \(M_0\):
+  \(w_0 = -2(w_1 + w_2) = -2(4/3 - 1/12) = -2 \cdot 5/4 \cdot ... = -5/2\).
+  (Direct:
+  \(w_0 = -2 \cdot 4/3 - 2 \cdot (-1/12) = -8/3 + 1/6 = -16/6 + 1/6 = -15/6 = -5/2\).)
+\end{itemize}
+
+Hence
+
+\[
+\boxed{\;w = \bigl(-\tfrac{1}{12},\ \tfrac{4}{3},\ -\tfrac{5}{2},\ \tfrac{4}{3},\ -\tfrac{1}{12}\bigr)\;}
+\]
+
+with truncation error from the next non-zero even moment
+\(M_6 = 2 w_1 + 128 w_2 = 8/3 - 32/3 = -8\), giving leading error
+\(-\tfrac{h^4}{6!}\cdot M_6 \cdot f^{(6)}(x_i) = +\tfrac{8 h^4}{720}\,f^{(6)}(x_i) = \tfrac{h^4}{90}\,f^{(6)}(x_i)\).
+
+So the local truncation error is
+\(\tfrac{h^4}{90}\,f^{(6)}(x_i) = O(h^4)\), which is the \textbf{order-4
+accuracy} advertised. Compare with the order-2 stencil's
+\(\tfrac{h^2}{12}\,f^{(4)}\).
+
+\subsubsection{Order-4 first-derivative
+stencil}\label{order-4-first-derivative-stencil}
+
+Same procedure for \(\partial f / \partial x\) at \(x_i\):
+
+\[
+\partial_x f(x_i) \;\approx\; \frac{1}{h}\,\sum_{m=-2}^{2} w_m\,f(x_{i+m}),
+\]
+
+with \textbf{anti-symmetry} \(w_{-m} = -w_m\) (so \(w_0 = 0\),
+\(w_{-1} = -w_1\), \(w_{-2} = -w_2\)). The non-trivial moment conditions
+are now odd \(p\):
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.1143}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.2286}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.6571}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+moment
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+required value
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+reason
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\(M_1 = 2 w_1 + 4 w_2\) & \passthrough{\lstinline!1!} & match
+\(h \cdot f'(x_i)\) → after \(1/h\) scale \\
+\(M_3 = 2 w_1 + 16 w_2\) & \passthrough{\lstinline!0!} & kill the
+\(h^3\) term to lift accuracy \\
+\end{longtable}
+}
+
+Solving:
+
+\begin{itemize}
+\tightlist
+\item
+  Subtracting \(M_3 - M_1\): \(12 w_2 = -1\) → \(w_2 = -1/12\).
+\item
+  Back into \(M_1\): \(2 w_1 + 4 \cdot (-1/12) = 1\) →
+  \(w_1 = (1 + 1/3)/2 = 2/3\).
+\end{itemize}
+
+Hence
+
+\[
+\boxed{\;w = \bigl(\tfrac{1}{12},\ -\tfrac{2}{3},\ 0,\ \tfrac{2}{3},\ -\tfrac{1}{12}\bigr)\;}
+\]
+
+Truncation error from \(M_5\):
+\(M_5 = 2 w_1 + 64 w_2 = 4/3 - 16/3 = -4\), giving leading error
+\(-\tfrac{h^4}{5!}\cdot M_5 \cdot f^{(5)}(x_i) = \tfrac{4 h^4}{120}\,f^{(5)}(x_i) = \tfrac{h^4}{30}\,f^{(5)}(x_i) = O(h^4)\).
+
+Compare with the order-2 first-derivative stencil's
+\(\tfrac{h^2}{6}\,f^{(3)}\).
+
+\subsubsection{Why the per-axis-independent structure works on
+anisotropic
+grids}\label{why-the-per-axis-independent-structure-works-on-anisotropic-grids}
+
+The two derivations above produce \textbf{unitless weight tables} ---
+\(\{-1/12, 4/3, -5/2, 4/3, -1/12\}\) for \(\partial^2/\partial x^2\) and
+\(\{1/12, -2/3, 0, 2/3, -1/12\}\) for \(\partial/\partial x\). Each
+table encodes the linear combination of \emph{index-shifted samples}
+that approximates the derivative; the spacing \(h\) enters only as a
+scalar postmultiplication (\(1/h^2\) or \(1/h\)).
+
+For 3D on a Cartesian-orthogonal grid, the Laplacian decomposes
+axis-by-axis because the operator
+\(\nabla^2 = \partial_x^2 + \partial_y^2 + \partial_z^2\) has no
+cross-derivative terms --- the basis vectors are mutually perpendicular.
+So we apply the same 1D weight table along each axis independently,
+scaled by that axis's own cell size. The tables don't need to be
+regenerated per axis.
+
+The order-2 Phase 1 Laplacian already used this structure; Phase 7 just
+substitutes a longer table.
+
+\subsection{3. Algorithm}\label{algorithm}
+
+The implementation is the smallest change consistent with the design:
+
+\subsubsection{Stencil tables}\label{stencil-tables}
+
+\href{../../../include/gridcalc/stencil/CentralDifference.hpp}{\passthrough{\lstinline!stencil/CentralDifference.hpp!}}
+adds the explicit \passthrough{\lstinline!Coefficients<4>!}
+specialization with \passthrough{\lstinline!radius = 2!},
+\passthrough{\lstinline!offsets = \{-2, -1, 0, 1, 2\}!}, and the weights
+derived above.
+\href{../../../include/gridcalc/stencil/FirstDerivative.hpp}{\passthrough{\lstinline!stencil/FirstDerivative.hpp!}}
+adds the analogous \passthrough{\lstinline!FirstDerivative<4>!}
+specialization. Both follow the existing primary-undefined pattern:
+\passthrough{\lstinline!Coefficients<3>!} /
+\passthrough{\lstinline!FirstDerivative<3>!} etc. are still undefined
+and trip a compile error at the call site.
+
+\subsubsection{Operator templating}\label{operator-templating}
+
+The three Phase 1/2 operator headers gain a
+\passthrough{\lstinline!template <int Order = 2>!} parameter on the
+function. The body changes by exactly one line --- the hardcoded stencil
+type becomes the parameterized one:
+
+\begin{lstlisting}
+- using Coeffs = stencil::Coefficients<2>;
++ using Coeffs = stencil::Coefficients<Order>;
+\end{lstlisting}
+
+(and analogously for \passthrough{\lstinline!FirstDerivative<Order>!} in
+\passthrough{\lstinline!Gradient.hpp!} and
+\passthrough{\lstinline!Divergence.hpp!}). The per-axis loop already
+iterates \passthrough{\lstinline!m!} over
+\passthrough{\lstinline!Coeffs::offsets.size()!}, so a 5-element table
+just runs the loop one more iteration per axis without any structural
+change.
+
+\subsubsection{Backward compatibility}\label{backward-compatibility}
+
+C++17 resolves a function-template call with all template parameters
+defaulted using the no-template-arg syntax:
+\passthrough{\lstinline!laplacian(field)!} calls
+\passthrough{\lstinline!laplacian<2>(field)!} because
+\passthrough{\lstinline!Order!} defaults to \passthrough{\lstinline!2!}.
+So every Phase 1/2 caller (and every Phase 4--6 transitive caller, like
+\passthrough{\lstinline!func::evaluate(... f(\_, \_, lap\_psi))!} and
+\passthrough{\lstinline!solve::diffuse!}) continues to compile and
+produce bit-identical output. The Phase 1/2 test files are untouched;
+the Phase 7 test file
+(\passthrough{\lstinline!test/higher\_order\_test.cpp!}) exercises the
+new \passthrough{\lstinline!<4>!} overload.
+
+\subsubsection{Per-point cost}\label{per-point-cost}
+
+Order 4 reads \passthrough{\lstinline!2 * radius + 1 = 5!} samples per
+axis instead of \passthrough{\lstinline!3!}. Per-grid-point cost is
+therefore \passthrough{\lstinline!\~5/3 ≈ 1.67×!} the order-2 cost ---
+in exchange for the truncation error dropping from \(O(h^2)\) to
+\(O(h^4)\), which at the typical test resolution
+\passthrough{\lstinline!N = 32!} corresponds to \textbf{10--100×
+absolute-accuracy improvement} (verified by
+\passthrough{\lstinline!HigherOrderTest.*MoreAccurateThanOrder2!}). For
+most applications this is a win; the Phase 20 performance pass will
+quantify exact slowdown on the benchmark suite.
+
+\subsection{4. Design decisions}\label{design-decisions}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Compile-time \passthrough{\lstinline!<Order>!} over runtime
+  parameter.} Matches the project's existing pattern
+  (\passthrough{\lstinline!stencil::Coefficients<Order>!} is already
+  templated this way; Phase 3's
+  \passthrough{\lstinline!Pairwise!}/\passthrough{\lstinline!Kahan!},
+  Phase 4's arity dispatch, Phase 6's
+  \passthrough{\lstinline!ExplicitEuler!}/\passthrough{\lstinline!RK4!}).
+  No runtime branch in the inner loop. Compile-time error on unsupported
+  orders.
+\item
+  \textbf{Hard-coded weights, derivation in the Developer Note.} Two
+  specializations, \textasciitilde10 LOC each. Deferred constexpr
+  Fornberg until Phase 8/11 actually require many more orders. See
+  \passthrough{\lstinline!requirements.md!} for the full rationale.
+\item
+  \textbf{Default \passthrough{\lstinline!Order = 2!} rather than
+  removing the default.} Backward compatibility --- Phase 1/2/4/5/6
+  callers don't need to change. C++17 function-template default-argument
+  semantics make this clean.
+\item
+  \textbf{Apply to all three operators in one phase.} Matches the
+  roadmap deliverable list. Divergence is templated for symmetry even
+  though the roadmap text only names Laplacian and gradient --- the
+  operators are tightly coupled (divergence reads gradient's
+  \passthrough{\lstinline!FirstDerivative!} table) and skipping
+  divergence would force a Phase 7.5 follow-up.
+\item
+  \textbf{No \passthrough{\lstinline!Order!} parameter on
+  \passthrough{\lstinline!solve::diffuse!}.}
+  \passthrough{\lstinline!solve::diffuse!} is the thin convenience
+  driver for \(D \nabla^2 \psi\); it currently calls
+  \passthrough{\lstinline!diff::laplacian(...)!} without a template arg,
+  which now resolves to order 2. A future phase can promote the
+  diffusion driver to take an \passthrough{\lstinline!Order!} parameter
+  if the use case justifies it; today the workaround (call
+  \passthrough{\lstinline!solve::integrate!} directly with a custom RHS
+  that uses \passthrough{\lstinline!laplacian<4>!}) is documented in the
+  User Guide.
+\end{itemize}
+
+\subsection{5. References}\label{references}
+
+{[}1{]} Fornberg, B. (1988). ``Generation of Finite Difference Formulas
+on Arbitrarily Spaced Grids.'' \emph{Mathematics of Computation},
+51(184), 699--706.
+\url{https://doi.org/10.1090/S0025-5718-1988-0935077-0}. The canonical
+reference for deriving central-difference weights at arbitrary order on
+arbitrary stencils. Used here as the \emph{theoretical} derivation
+framework even though the two specific specializations are hard-coded;
+the derivation in §2 above is a hand-evaluation of Fornberg's algorithm
+at order 4 with stencil offsets
+\passthrough{\lstinline!\{-2, -1, 0, 1, 2\}!}.
+
+{[}2{]} LeVeque, R. J. (2007). \emph{Finite Difference Methods for
+Ordinary and Partial Differential Equations}. SIAM. ISBN
+978-0-89871-783-9. \url{https://doi.org/10.1137/1.9780898717839}. §1.5
+covers higher-order finite differences and lists the same
+\passthrough{\lstinline!\{-1/12, 4/3, -5/2, 4/3, -1/12\}!} stencil for
+\(\partial^2/\partial x^2\) in Table 1.1.
+
+{[}3{]} DLMF (Digital Library of Mathematical Functions), §3.4
+``Differentiation.'' \url{https://dlmf.nist.gov/3.4} (permanent URL).
+NIST's online reference includes the central-difference weights for both
+first and second derivatives at orders 2, 4, 6, 8 in tabular form;
+matches the derivation here.
+
+{[}4{]} Trefethen, L. N. (2000). \emph{Spectral Methods in MATLAB}.
+SIAM. \url{https://doi.org/10.1137/1.9780898719598}. Chapter 1 motivates
+the choice between increasing stencil order vs refining the grid (the
+classic FD-vs-spectral tradeoff); the Phase 7 User Guide note's ``When
+to pick order 4'' guidance is in the spirit of this discussion.

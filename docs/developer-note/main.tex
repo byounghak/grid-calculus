@@ -12,6 +12,13 @@
 % directory, found via TEXINPUTS). Load it BEFORE the common preamble so its
 % `\doxysection`, `\textcolor`, color-name definitions, etc. are available
 % when api-reference.tex `\input{}`s the per-class .tex files.
+% Preload `hanging` with `notquote` option so its default apostrophe-handling
+% redefinition does not collide with LaTeX's math-mode prime parsing
+% (we have many `f'(x)`, `f''(x)` expressions in the migrated chapters).
+% Doxygen's doxygen.sty pulls in `hanging` unconditionally; loading it first
+% with options pins those options for the subsequent \RequirePackage call.
+\usepackage[notquote]{hanging}
+
 \usepackage{makeidx}
 \usepackage{graphicx}
 \usepackage{doxygen}

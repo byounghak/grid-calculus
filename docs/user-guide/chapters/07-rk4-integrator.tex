@@ -1,5 +1,212 @@
 \chapter{RK4 time integration}
-\label{chap:rk4-integrator}
+\label{chap:rk4-time-integration}
 
-\textit{Absorbed from \path{docs/user-guide/notes/phase-6-rk4-integrator.md}
-in Phase 10 Group 3. Placeholder until migrated.}
+\begin{quote}
+Spec dir:
+\passthrough{\lstinline!specs/2026-05-02-phase-6-rk4-integrator/!}.
+Version: \passthrough{\lstinline!0.6.0!}.
+\end{quote}
+
+\subsection{What this gives you}\label{what-this-gives-you}
+
+A higher-order time integrator (classic 4-stage Runge--Kutta) and a
+\textbf{generic dispatcher} that lets you pick which integrator to use:
+
+\begin{lstlisting}[language={C++}]
+solve::integrate(psi, rhs, dt, n_steps, IntegratorTag{});
+\end{lstlisting}
+
+with \passthrough{\lstinline!IntegratorTag!} being either
+\passthrough{\lstinline!solve::ExplicitEuler!} (Phase 5) or
+\passthrough{\lstinline!solve::RK4!} (new in Phase 6).
+
+\passthrough{\lstinline!solve::diffuse!} is now templated on the
+integrator tag so you can swap between Euler and RK4 with one extra
+argument:
+
+\begin{lstlisting}[language={C++}]
+solve::diffuse(psi, D, dt, n_steps);                    // Euler (default)
+solve::diffuse(psi, D, dt, n_steps, solve::RK4{});      // RK4
+\end{lstlisting}
+
+RK4 is \textbf{more accurate} at the same \passthrough{\lstinline!dt!}
+(4 orders better --- the time-error per step is
+\passthrough{\lstinline!O(dt\^5)!} vs Euler's
+\passthrough{\lstinline!O(dt\^2)!}) and has a \textbf{larger stability
+bound} for the heat equation
+(\passthrough{\lstinline!D dt sum(1/h\_a\^2) ≤ 0.6963!} vs Euler's
+\passthrough{\lstinline!0.5!}). The cost is 4 RHS evaluations per step
+instead of 1.
+
+\subsection{API}\label{api}
+
+Headers:
+\href{../../../include/gridcalc/solve/Integrator.hpp}{\passthrough{\lstinline!include/gridcalc/solve/Integrator.hpp!}}
+(one-stop aggregator),
+\href{../../../include/gridcalc/solve/ExplicitEuler.hpp}{\passthrough{\lstinline!include/gridcalc/solve/ExplicitEuler.hpp!}},
+\href{../../../include/gridcalc/solve/RK4.hpp}{\passthrough{\lstinline!include/gridcalc/solve/RK4.hpp!}},
+\href{../../../include/gridcalc/solve/Diffusion.hpp}{\passthrough{\lstinline!include/gridcalc/solve/Diffusion.hpp!}}.
+
+\begin{lstlisting}[language={C++}]
+namespace gridcalc::solve {
+
+// Integrator tag types -- empty structs that carry compile-time properties.
+struct ExplicitEuler { static constexpr double diffusionCFLLimit = 0.5;    };
+struct RK4           { static constexpr double diffusionCFLLimit = 0.6963; };
+
+// Generic dispatcher (overloaded on tag).
+template <class Rhs>
+void integrate(core::Field<double>& psi, Rhs&& rhs, double dt, int n_steps, ExplicitEuler);
+
+template <class Rhs>
+void integrate(core::Field<double>& psi, Rhs&& rhs, double dt, int n_steps, RK4);
+
+// Phase-5 thin wrapper -- equivalent to integrate(..., ExplicitEuler{}).
+template <class Rhs>
+void explicitEuler(core::Field<double>& psi, Rhs&& rhs, double dt, int n_steps);
+
+// Diffusion driver -- now templated on integrator tag.
+template <class Integrator = ExplicitEuler>
+void diffuse(core::Field<double>& psi, double D, double dt, int n_steps,
+             Integrator tag = {});
+
+}  // namespace gridcalc::solve
+\end{lstlisting}
+
+\subsubsection{Picking an integrator}\label{picking-an-integrator}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 2\tabcolsep) * \real{0.8088}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 2\tabcolsep) * \real{0.1912}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Want
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Use
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Simplest, smallest per-step cost &
+\passthrough{\lstinline!ExplicitEuler\{\}!} (Phase 5 default) \\
+Best accuracy per step & \passthrough{\lstinline!RK4\{\}!} \\
+Larger time step (closer to RK4's \passthrough{\lstinline!\~1.39×!}
+looser CFL) & \passthrough{\lstinline!RK4\{\}!} \\
+Pure linear / Hamiltonian / oscillatory dynamics &
+\passthrough{\lstinline!RK4\{\}!} (lower phase error) \\
+One-pass throwaway integration of a smooth IC & Either; default Euler is
+fine \\
+\end{longtable}
+}
+
+Both integrators take the same RHS callable signature:
+\passthrough{\lstinline!Field<double> rhs(const Field<double>\&)!}.
+SFINAE-validates; mismatch trips a
+\passthrough{\lstinline!static\_assert!}.
+
+\subsubsection{CFL stability check}\label{cfl-stability-check}
+
+\passthrough{\lstinline!solve::diffuse!} validates the von-Neumann bound
+\passthrough{\lstinline!D · dt · sum\_a(1/h\_a\^2) ≤ Tag::diffusionCFLLimit!}
+before integration begins and throws
+\passthrough{\lstinline!std::invalid\_argument!} if violated. The error
+message names the integrator type, the offending values, and the
+applicable limit.
+
+\passthrough{\lstinline!solve::integrate!} and
+\passthrough{\lstinline!solve::explicitEuler!} do \textbf{not} check CFL
+--- they're generic over the RHS, which means they cannot know the
+relevant stability bound. If you call them directly with a custom RHS,
+you own the stability argument.
+
+\subsection{Worked example: heat equation with
+RK4}\label{worked-example-heat-equation-with-rk4}
+
+\begin{lstlisting}[language={C++}]
+#include <cmath>
+#include <gridcalc/core/Field.hpp>
+#include <gridcalc/core/Grid.hpp>
+#include <gridcalc/solve/Diffusion.hpp>
+#include <gridcalc/solve/Integrator.hpp>
+
+using gridcalc::core::Field;
+using gridcalc::core::Grid;
+using gridcalc::core::Vec3d;
+using gridcalc::solve::diffuse;
+using gridcalc::solve::RK4;
+
+constexpr double kPi = 3.14159265358979323846;
+
+const int N = 32;
+const double L = 2.0 * kPi;
+const double h = L / N;
+const double D = 0.1;
+const double dt = 0.05;
+const int n_steps = 100;
+
+Grid grid(N, N, N, Vec3d(h, h, h));
+
+Field<double> psi(grid, [](double x, double y, double z) {
+  return std::sin(x) * std::sin(y) * std::sin(z);
+});
+
+// One-line switch from Euler to RK4: pass the integrator tag.
+diffuse(psi, D, dt, n_steps, RK4{});
+
+// psi now matches the analytical exp(-3 D T) sin(x) sin(y) sin(z) to
+// within ~0.5% relative max-norm error -- 10x tighter than Phase 5's
+// Euler at the same parameters.
+\end{lstlisting}
+
+\subsection{Worked example: custom RHS (no CFL
+gating)}\label{worked-example-custom-rhs-no-cfl-gating}
+
+\begin{lstlisting}[language={C++}]
+#include <gridcalc/diff/Laplacian.hpp>
+#include <gridcalc/solve/Integrator.hpp>
+
+// Reaction-diffusion: dpsi/dt = D laplacian(psi) - k psi
+auto rhs = [D, k](const Field<double>& f) {
+  Field<double> out = gridcalc::diff::laplacian(f);
+  const std::size_t N_ = out.getSize();
+  double* o = out.data();
+  const double* p = f.data();
+  for (std::size_t n = 0; n < N_; ++n) {
+    o[n] = D * o[n] - k * p[n];
+  }
+  return out;
+};
+
+// RK4 makes this much more accurate than Euler at the same dt.
+gridcalc::solve::integrate(psi, rhs, dt, n_steps, gridcalc::solve::RK4{});
+\end{lstlisting}
+
+\subsection{\texorpdfstring{What this does \emph{not} do
+(yet)}{What this does not do (yet)}}\label{what-this-does-not-do-yet}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{No adaptive time stepping.} Embedded RK methods (RK4(5),
+  Dormand--Prince) arrive only if a downstream phase needs them.
+\item
+  \textbf{No symplectic / structure-preserving integrators.} Heat
+  equation is dissipative; symplectic schemes are for Hamiltonian flows.
+\item
+  \textbf{No multistep methods (Adams--Bashforth, BDF).} Implicit BDF
+  arrives in Phase 19.
+\item
+  \textbf{No persistent scratch pool for RK4.} Each step allocates
+  \textasciitilde6 fields; Phase 20 swaps in a reusable scratch buffer.
+\item
+  \textbf{Boundary conditions: still periodic-only.} Phase 18's
+  Dirichlet/Neumann policies will need their own integrator-test
+  coverage; tracked in \passthrough{\lstinline!STATUS.md!} ``Open /
+  deferred items.''
+\end{itemize}
+
+For the why-RK4-is-order-4 derivation and the stability-bound
+calculation, see
+\href{../../developer-note/notes/phase-6-rk4-integrator.md}{\passthrough{\lstinline!docs/developer-note/notes/phase-6-rk4-integrator.md!}}.

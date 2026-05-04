@@ -1,6 +1,199 @@
 \chapter{Higher-order accuracy stencils}
-\label{chap:higher-order-stencils}
+\label{chap:higher-order-accuracy-stencils}
 
-\textit{Absorbed from
-\path{docs/user-guide/notes/phase-7-higher-order-stencils.md} in Phase
-10 Group 3. Placeholder until migrated.}
+\begin{quote}
+Spec dir:
+\passthrough{\lstinline!specs/2026-05-03-phase-7-higher-order-stencils/!}.
+Version: \passthrough{\lstinline!0.7.0!}.
+\end{quote}
+
+\subsection{What this gives you}\label{what-this-gives-you}
+
+A compile-time switch on the three Phase 1--2 differential operators
+that selects the \textbf{stencil accuracy order}. The order-2 stencils
+that have shipped since Phase 1/2 stay the default; opting into order 4
+gives an \passthrough{\lstinline!O(h\^4)!} truncation error instead of
+\passthrough{\lstinline!O(h\^2)!} --- typically \textbf{10× to 100×
+smaller absolute error at the same grid resolution}.
+
+\begin{lstlisting}[language={C++}]
+diff::laplacian(psi);          // order 2 (Phase 1 default; unchanged)
+diff::laplacian<4>(psi);       // order 4 (new)
+
+diff::gradient(psi);           // order 2 (Phase 2 default; unchanged)
+diff::gradient<4>(psi);        // order 4
+
+diff::divergence(V);           // order 2
+diff::divergence<4>(V);        // order 4
+\end{lstlisting}
+
+All Phase 1/2/3/4/5/6 callers keep working unchanged because the new
+template parameter has a default.
+
+\subsection{API}\label{api}
+
+Headers (unchanged file paths; signatures gain a template parameter):
+\href{../../../include/gridcalc/diff/Laplacian.hpp}{\passthrough{\lstinline!include/gridcalc/diff/Laplacian.hpp!}},
+\href{../../../include/gridcalc/diff/Gradient.hpp}{\passthrough{\lstinline!include/gridcalc/diff/Gradient.hpp!}},
+\href{../../../include/gridcalc/diff/Divergence.hpp}{\passthrough{\lstinline!include/gridcalc/diff/Divergence.hpp!}}.
+
+\begin{lstlisting}[language={C++}]
+namespace gridcalc::diff {
+
+template <int Order = 2>
+core::Field<double>      laplacian (const core::Field<double>&)        noexcept;
+
+template <int Order = 2>
+core::Field<core::Vec3d> gradient  (const core::Field<double>&)        noexcept;
+
+template <int Order = 2>
+core::Field<double>      divergence(const core::Field<core::Vec3d>&)   noexcept;
+
+}  // namespace gridcalc::diff
+\end{lstlisting}
+
+\passthrough{\lstinline!Order!} must be a supported even integer. Phase
+1 specialized the order-2 stencils; Phase 7 specializes the order-4
+stencils. Calling e.g.~\passthrough{\lstinline!laplacian<3>(psi)!}
+triggers a \textbf{compile error} at the call site (the primary
+\passthrough{\lstinline!Coefficients<Order>!} template is intentionally
+undefined), not a silent zero-stencil bug.
+
+\subsubsection{What ``order 4'' buys you}\label{what-order-4-buys-you}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3750}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3068}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3182}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Property
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+order 2 (default)
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+order 4
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Stencil radius & \passthrough{\lstinline!1!} &
+\passthrough{\lstinline!2!} \\
+Samples read per axis & \passthrough{\lstinline!3!} &
+\passthrough{\lstinline!5!} \\
+Truncation error & \passthrough{\lstinline!O(h\^2)!} &
+\passthrough{\lstinline!O(h\^4)!} \\
+Per-point arithmetic cost & \textasciitilde baseline &
+\textasciitilde{}\passthrough{\lstinline!5/3 ≈ 1.67×!} baseline \\
+Practical absolute error at N=32, ψ = sin·sin·sin &
+\textasciitilde{}\passthrough{\lstinline!1e-2!} &
+\textasciitilde{}\passthrough{\lstinline!5e-4!} \\
+\end{longtable}
+}
+
+Order 4 is typically the right pick when: - You want better accuracy at
+the same \passthrough{\lstinline!N!} and don't want to refine the grid
+(which would be 8× the memory in 3D). - You're computing functionals
+where the gradient or Laplacian dominates the error budget (Phase 4 GL
+example, Phase 5 / 6 diffusion).
+
+Stay on order 2 when: - The integrand is non-smooth and 4th-order
+accuracy doesn't help (the truncation analysis assumes enough
+smoothness). - Per-point cost matters and order 2 is ``good enough''. -
+You're benchmarking against existing Phase 1/2 results that used order
+2.
+
+\subsection{Worked example}\label{worked-example}
+
+Direct comparison on the trig eigenfunction at fixed N:
+
+\begin{lstlisting}[language={C++}]
+#include <cmath>
+#include <gridcalc/core/EigenAliases.hpp>
+#include <gridcalc/core/Field.hpp>
+#include <gridcalc/core/Grid.hpp>
+#include <gridcalc/diff/Laplacian.hpp>
+
+using gridcalc::core::Field;
+using gridcalc::core::Grid;
+using gridcalc::core::Vec3d;
+using gridcalc::diff::laplacian;
+
+constexpr double kPi = 3.14159265358979323846;
+
+const int N = 32;
+const double L = 2.0 * kPi;
+const double h = L / N;
+
+Grid grid(N, N, N, Vec3d(h, h, h));
+Field<double> psi(grid, [](double x, double y, double z) {
+  return std::sin(x) * std::sin(y) * std::sin(z);
+});
+Field<double> expected(grid, [](double x, double y, double z) {
+  return -3.0 * std::sin(x) * std::sin(y) * std::sin(z);
+});
+
+Field<double> lap_o2 = laplacian<2>(psi);   // ~1% relative error at N=32
+Field<double> lap_o4 = laplacian<4>(psi);   // ~0.05% relative error at N=32
+\end{lstlisting}
+
+The 20× absolute-accuracy improvement comes for free at the call site
+--- just change the template arg.
+
+\subsection{Mixing with Phase 5/6 time
+integration}\label{mixing-with-phase-56-time-integration}
+
+\passthrough{\lstinline!solve::diffuse(psi, D, dt, n\_steps)!} calls
+\passthrough{\lstinline!diff::laplacian(...)!} (order 2) under the hood.
+To switch the diffusion driver to a 4th-order spatial Laplacian, you
+currently need to bypass \passthrough{\lstinline!diffuse!} and use the
+generic integrator directly:
+
+\begin{lstlisting}[language={C++}]
+#include <gridcalc/solve/Integrator.hpp>
+
+const double D = 0.1;
+solve::integrate(
+    psi,
+    [D](const Field<double>& f) {
+      auto out = laplacian<4>(f);          // order-4 Laplacian
+      const std::size_t N = out.getSize();
+      double* o = out.data();
+      for (std::size_t n = 0; n < N; ++n) o[n] *= D;
+      return out;
+    },
+    dt, n_steps,
+    solve::RK4{});
+\end{lstlisting}
+
+\passthrough{\lstinline!solve::diffuse!} will gain an order template
+parameter in a future phase if the use case justifies it. Until then,
+the generic-integrator path above is the escape hatch.
+
+\subsection{\texorpdfstring{What this does \emph{not} do
+(yet)}{What this does not do (yet)}}\label{what-this-does-not-do-yet}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Order ≥ 6.} Out of scope until a phase actually needs them.
+\item
+  \textbf{Order 3 (asymmetric / upwind stencils).} Symmetric central
+  differences have even truncation orders only.
+\item
+  \textbf{Higher-order spatial derivatives}
+  (\passthrough{\lstinline!∂³!}, \passthrough{\lstinline!∂⁴!}, mixed
+  partials). Phase 8.
+\item
+  \textbf{Order parameter on \passthrough{\lstinline!solve::diffuse!}
+  itself.} See workaround above.
+\item
+  \textbf{Non-orthogonal Bravais grids.} Phase 15. Cross-derivative
+  terms appear and the per-axis-independent stencil structure breaks
+  down.
+\end{itemize}
+
+For the Taylor-matching derivation of the order-4 weights and the
+truncation-error analysis, see
+\href{../../developer-note/notes/phase-7-higher-order-stencils.md}{\passthrough{\lstinline!docs/developer-note/notes/phase-7-higher-order-stencils.md!}}.
