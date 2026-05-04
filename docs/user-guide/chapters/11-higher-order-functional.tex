@@ -1,0 +1,201 @@
+\chapter{Higher-order functionals}
+\label{chap:higher-order-functional}
+
+\begin{quote}
+Spec dir:
+\passthrough{\lstinline!specs/2026-05-03-phase-11-higher-order-functional/!}.
+Version: \passthrough{\lstinline!0.11.0!}.
+\end{quote}
+
+\subsection{What this gives you}\label{phase11-what}
+
+A fourth callable arity for \passthrough{\lstinline!gridcalc::func::evaluate!}
+that exposes the contracted-scalar biharmonic
+\(\nabla^4\psi\) in the integrand. Together with the three arities from
+Phase 4, the supported densities are
+
+\begin{lstlisting}[language={C++}]
+double f(double psi);                                                            // arity 1
+double f(double psi, const Vec3d& grad);                                         // arity 2
+double f(double psi, const Vec3d& grad, double lap);                             // arity 3
+double f(double psi, const Vec3d& grad, double lap, double biharm);              // arity 4 (new)
+\end{lstlisting}
+
+\passthrough{\lstinline!evaluate!} picks the longest matching arity at
+compile time and materializes only the derivatives that arity needs.
+At arity 4 it materializes \passthrough{\lstinline!gradient(psi)!},
+\passthrough{\lstinline!laplacian(psi)!}, and
+\passthrough{\lstinline!biharmonic(psi)!} (Phase 8's fused six-term
+direct stencil), then forms the integrand pointwise and reduces with
+\passthrough{\lstinline!func::integrate!}. The new fourth argument is a
+plain \passthrough{\lstinline!double!} per grid point --- it is the
+return type of \passthrough{\lstinline!diff::biharmonic!}.
+
+\textbf{Out of scope at Phase 11.} Rank-3 and rank-4 tensor-valued
+derivative arguments (the full \(\nabla^3\psi\), \(\nabla^4\psi\)
+objects) are deferred to Phase 13/14, where the tensor type and the
+contraction expression-template machinery will land together. If your
+density only needs the contracted scalars (Laplacian and biharmonic),
+the Phase 11 surface is enough.
+
+\subsection{API}\label{phase11-api}
+
+The signature of \passthrough{\lstinline!evaluate!} is unchanged --- the
+new arity is a fourth branch in the existing dispatch ladder. Tag
+forwarding to \passthrough{\lstinline!func::integrate!} works as before:
+
+\begin{lstlisting}[language={C++}]
+namespace gridcalc::func {
+
+template <class F, class Tag = Pairwise>
+double evaluate(const core::Field<double>& psi, F&& f, Tag tag = {});
+
+}  // namespace gridcalc::func
+\end{lstlisting}
+
+The compile-time error message for an unsupported callable enumerates
+all four arities.
+
+\subsection{Worked example: phase-field-crystal free
+energy}\label{phase11-pfc}
+
+The phase-field-crystal (PFC) functional is the canonical use case for
+this phase. It models an ordered solid as the minimum of a free
+energy whose derivative kernel \((q_0^2 + \nabla^2)^2\) selects a
+preferred wavelength near \(q_0\):
+
+\[
+F[\psi] \;=\; \int \Big[\tfrac{1}{2}\,\psi\,\big[(q_0^2 + \nabla^2)^2 - \epsilon\big]\,\psi \;+\; \tfrac{1}{4}\,\psi^4\Big]\,\dd V.
+\]
+
+Expanding \((q_0^2 + \nabla^2)^2 = q_0^4 + 2q_0^2\nabla^2 + \nabla^4\)
+gives the four-term form the integrand lambda implements:
+
+\[
+F[\psi] \;=\; \int \Big[\tfrac{1}{2}(q_0^4 - \epsilon)\,\psi^2 \;+\; q_0^2\,\psi\,\nabla^2\psi \;+\; \tfrac{1}{2}\,\psi\,\nabla^4\psi \;+\; \tfrac{1}{4}\,\psi^4\Big]\,\dd V.
+\]
+
+For the manufactured solution \(\psi(\mathbf{x}) = \sin x\,\sin y\,\sin z\)
+on the periodic box \([0, 2\pi)^3\), the derivative chain is
+\(\nabla^2\psi = -3\psi\), \(\nabla^4\psi = 9\psi\), and the relevant
+integrals are
+\(\int\psi^2 = \pi^3\), \(\int\psi^4 = \tfrac{27\pi^3}{64}\).
+With \(q_0 = 1\) and \(\epsilon = 0.1\) the analytical functional value is
+
+\[
+F_{\text{ref}} \;=\; \Big[\tfrac{1}{2}(1 - 0.1) + (-3) + \tfrac{1}{2}\cdot 9 + \tfrac{27}{256}\Big]\,\pi^3 \;=\; 2.05546875\,\pi^3 \;\approx\; 63.7383.
+\]
+
+Calling \passthrough{\lstinline!func::evaluate!} on the discrete \(\psi\):
+
+\begin{lstlisting}[language={C++}]
+#include <cmath>
+#include <gridcalc/core/EigenAliases.hpp>
+#include <gridcalc/core/Field.hpp>
+#include <gridcalc/core/Grid.hpp>
+#include <gridcalc/func/Functional.hpp>
+
+using gridcalc::core::Field;
+using gridcalc::core::Grid;
+using gridcalc::core::Vec3d;
+using gridcalc::func::evaluate;
+
+constexpr double kPi = 3.14159265358979323846;
+
+const int N = 64;
+const double L = 2.0 * kPi;
+const double h = L / N;
+const double q0  = 1.0;
+const double eps = 0.1;
+
+Grid grid(N, N, N, Vec3d(h, h, h));
+Field<double> psi(grid, [](double x, double y, double z) {
+  return std::sin(x) * std::sin(y) * std::sin(z);
+});
+
+auto pfc_density = [q0, eps](double p, const Vec3d&, double lp, double bp) {
+  const double q0_sq = q0 * q0;
+  const double q0_4  = q0_sq * q0_sq;
+  return 0.5 * (q0_4 - eps) * p * p
+       + q0_sq * p * lp
+       + 0.5   * p * bp
+       + 0.25  * p * p * p * p;
+};
+
+const double F = evaluate(psi, pfc_density);  // arity 4 selected
+\end{lstlisting}
+
+The lambda's \passthrough{\lstinline!const Vec3d&!} parameter is unused
+inside the body --- it appears only to select the 4-arg dispatch branch.
+At \passthrough{\lstinline!N=64!} the recovered \(F\) matches
+\(F_{\text{ref}}\) to better than \(2\%\) relative; the convergence
+sweep across \(N \in \{16, 32, 64\}\) shows the
+\(\mathcal{O}(h^2)\) rate inherited from the default-order biharmonic
+stencil.
+
+\subsection{Verifying with the spectral path}\label{phase11-spectral}
+
+Phase 9 ships
+\passthrough{\lstinline!gridcalc::spectral::biharmonic!} as the FFT-based
+verification reference (exact for band-limited inputs). For the worked
+example above, the same PFC integrand assembled from the spectral
+\passthrough{\lstinline!laplacian!} and
+\passthrough{\lstinline!biharmonic!} reduces to a value matching
+\(F_{\text{ref}}\) to machine precision:
+
+\begin{lstlisting}[language={C++}]
+#include <gridcalc/spectral/Derivatives.hpp>
+#include <gridcalc/func/Integrate.hpp>
+
+using gridcalc::func::integrate;
+
+const auto lap    = gridcalc::spectral::laplacian(psi);
+const auto biharm = gridcalc::spectral::biharmonic(psi);
+
+Field<double> integrand(grid);
+for (int k = 0; k < N; ++k)
+  for (int j = 0; j < N; ++j)
+    for (int i = 0; i < N; ++i)
+      integrand(i, j, k) = pfc_density(psi(i, j, k), {}, lap(i, j, k), biharm(i, j, k));
+
+const double F_spectral = integrate(integrand);  // |F_spectral - F_ref| / F_ref < 1e-12
+\end{lstlisting}
+
+This is the cross-check the Phase 11 test fixture
+(\href{../../../test/pfc_functional_test.cpp}{\passthrough{\lstinline!test/pfc\_functional\_test.cpp!}})
+runs as
+\passthrough{\lstinline!PfcFunctionalTest.SpectralCrossCheck!} alongside
+the FD-path acceptance test
+\passthrough{\lstinline!PfcFunctionalTest.HandComputedAtN64!}. The
+spectral path requires
+\passthrough{\lstinline!-DGRIDCALC\_USE\_FFT=ON!} (the default); the
+test \passthrough{\lstinline!\#ifdef!}-skips otherwise.
+
+\subsection{What this does \emph{not} do}\label{phase11-not-do}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Tensor-valued callable arguments.} Rank-3 / rank-4 derivative
+  tensors are deferred to Phase 13/14.
+\item
+  \textbf{The 3rd-derivative slot.} \(\nabla^3\psi\) has no useful
+  scalar contraction; the natural rank-1 form
+  \(\nabla(\nabla^2\psi)\) is not exposed at Phase 11. PFC does not
+  exercise it.
+\item
+  \textbf{Contraction expression templates.} Deferred to Phase 14
+  alongside the tensor-valued callable surface that motivates them.
+\item
+  \textbf{Variational derivative \(\delta F / \delta \psi\) and PFC
+  dynamics.} Phase 11 evaluates the functional value only.
+\item
+  \textbf{Vector- or tensor-field functionals
+  \(F[\mathbf{V}] = \int f(\mathbf{V}, \nabla\mathbf{V}, \dots)\,\dd V\).}
+  Phase 14.
+\end{itemize}
+
+For the leading-order discrete-error scaling of the biharmonic term, the
+spectral cross-check argument, and the rationale for keeping
+contraction expression templates out of this phase, see the
+``Higher-order functionals'' chapter of the Developer Note.

@@ -1,0 +1,360 @@
+\chapter{Higher-order functionals}
+\label{chap:dev:higher-order-functional}
+
+\begin{quote}
+Phase metadata. Spec dir:
+\passthrough{\lstinline!specs/2026-05-03-phase-11-higher-order-functional/!}.
+Extends \passthrough{\lstinline!gridcalc::func::evaluate!} with a fourth
+SFINAE-detected callable arity that exposes the contracted-scalar
+biharmonic \(\nabla^4\psi\). Worked example: phase-field-crystal free
+energy. Version target: \passthrough{\lstinline!0.11.0!}.
+\end{quote}
+
+\subsection{1. Theory}\label{phase11-theory}
+
+\subsubsection{Functionals over higher-order
+gradients}\label{phase11-functionals-higher}
+
+The functional surface from Phase 4
+(\Cref{chap:dev:functional-evaluation}) covers integrands depending on
+\((\psi, \nabla\psi, \nabla^2\psi)\). Many physically relevant free
+energies in materials science depend on higher derivatives. The
+phase-field-crystal (PFC) functional of Elder \& Grant is the canonical
+example:
+
+\[
+F[\psi] \;=\; \int \Big[\tfrac{1}{2}\,\psi\,\big[(q_0^2 + \nabla^2)^2 - \epsilon\big]\,\psi \;+\; \tfrac{1}{4}\,\psi^4\Big]\,\dd V.
+\]
+
+The kernel \((q_0^2 + \nabla^2)^2\) follows the Swift--Hohenberg
+lineage: when expanded in Fourier modes, its eigenvalue
+\((q_0^2 - |\mathbf{k}|^2)^2\) vanishes at
+\(|\mathbf{k}| = q_0\) and selects that wavelength as the soft mode of
+the linearized dynamics. The quartic \(\psi^4\) provides nonlinear
+saturation; the parameter \(\epsilon\) is the distance to the
+crystallization transition (transition at \(\epsilon = 0\)).
+
+\subsubsection{Why a contracted scalar
+\(\nabla^4\psi\) suffices for PFC}\label{phase11-why-scalar}
+
+PFC's only 4th-derivative term is \(\tfrac{1}{2}\,\psi\,\nabla^4\psi\),
+where \(\nabla^4 = (\nabla^2)^2\) is the biharmonic --- a scalar
+operator. The full rank-4 tensor \(\nabla^4\psi\) (15 unique components
+per grid point) is not needed: its only contracted-scalar specialization
+already ships in Phase 8 as
+\passthrough{\lstinline!diff::biharmonic!}. Phase 11 exposes that
+scalar in the callable's argument list and stops there. Rank-3 / rank-4
+tensor-valued arguments are deferred to Phase 13/14, alongside the
+tensor type and contraction expression templates.
+
+\subsubsection{Why \(|\nabla(\nabla\psi)|^2\) is \emph{not} the
+biharmonic at finite \(h\)}\label{phase11-why-direct}
+
+A naive reading of ``functional with a 4th-derivative term'' might
+suggest computing
+\(\int \psi\,\nabla^4\psi\,\dd V\) by integration by parts as
+\(\int |\nabla^2\psi|^2\,\dd V\) (true on a periodic domain at the
+continuous level). At finite \(h\), the FD approximations of the two
+forms have different leading-error constants --- the same stride-2
+phenomenon already documented for
+\passthrough{\lstinline!divergence(gradient(psi))!} versus
+\passthrough{\lstinline!laplacian(psi)!}
+(\Cref{chap:dev:periodic-3d-scalar-laplacian},
+\Cref{chap:dev:gradient-and-divergence}). Phase 8's biharmonic uses a fused
+six-term direct stencil specifically to land the \(|\mathbf{k}|^4\)
+acceptance bar at the published constant. Phase 11 inherits that
+choice: the biharmonic argument fed to the callable is computed by
+\passthrough{\lstinline!diff::biharmonic!}, not by composition.
+
+\subsection{2. Math derivation}\label{phase11-math}
+
+\subsubsection{Closed-form PFC reference on the manufactured
+solution}\label{phase11-closed-form}
+
+Pick \(\psi(\mathbf{x}) = \sin x\,\sin y\,\sin z\) on
+\([0, 2\pi)^3\). The single-axis Fourier support is \(|k_a| = 1\), so
+the function is band-limited well below the Nyquist for every grid in
+the convergence sweep \(N \in \{16, 32, 64\}\) (per-axis Nyquist
+\(N/2 \geq 8\)).
+
+The derivative chain at the continuous level:
+
+\begin{itemize}
+\tightlist
+\item \(\nabla^2\psi = (\partial_x^2 + \partial_y^2 + \partial_z^2)\,\psi = -3\,\psi\) (each axis contributes \(-\sin x\sin y\sin z\)).
+\item \(\nabla^4\psi = \nabla^2(-3\psi) = -3 \cdot (-3\psi) = 9\,\psi\).
+\end{itemize}
+
+The relevant integrals over \([0, 2\pi)^3\):
+
+\[
+\int \psi^2\,\dd V \;=\; \pi^3, \qquad
+\int \psi^4\,\dd V \;=\; \big(\tfrac{3\pi}{4}\big)^3 \;=\; \tfrac{27\pi^3}{64}.
+\]
+
+(The \(\sin^2\) integral over one period is \(\pi\); the \(\sin^4\)
+integral is \(3\pi/4\); the box is the tensor product of three such
+factors.)
+
+Expanding the PFC kernel
+\((q_0^2 + \nabla^2)^2 = q_0^4 + 2q_0^2\nabla^2 + \nabla^4\) and
+substituting the chain values:
+
+\begin{align*}
+F[\psi] &= \int\!\Big[\tfrac{1}{2}(q_0^4 - \epsilon)\,\psi^2 + q_0^2\,\psi\,\nabla^2\psi + \tfrac{1}{2}\,\psi\,\nabla^4\psi + \tfrac{1}{4}\,\psi^4\Big]\,\dd V \\
+&= \Big[\tfrac{1}{2}(q_0^4 - \epsilon) + q_0^2\,(-3) + \tfrac{1}{2}\,(9) + \tfrac{1}{4}\cdot\tfrac{27}{64}\Big]\,\pi^3.
+\end{align*}
+
+With \(q_0 = 1\), \(\epsilon = 0.1\):
+
+\[
+F_{\text{ref}} \;=\; \big[0.45 - 3 + 4.5 + \tfrac{27}{256}\big]\,\pi^3 \;=\; 2.05546875\,\pi^3 \;\approx\; 63.7383.
+\]
+
+All four functional terms contribute non-trivially (no degenerate
+zeros), so the test exercises every term independently.
+
+\subsubsection{Leading-order discrete error
+analysis}\label{phase11-error}
+
+The functional integrand evaluated on the discrete grid combines four
+terms. Three of them
+(\(\tfrac{1}{2}(q_0^4 - \epsilon)\,\psi^2\),
+\(q_0^2\,\psi\,\nabla^2\psi\),
+\(\tfrac{1}{4}\,\psi^4\)) are reduced by the Phase 3 periodic-midpoint
+rule, which is spectrally accurate for periodic band-limited inputs.
+The Laplacian factor in the second term is the Phase 1 stencil at
+default \passthrough{\lstinline!Order = 2!}, with leading truncation
+\(C_2\,h^2\,|\mathbf{k}|^4\,\psi\). The biharmonic factor in the third
+term, \(\tfrac{1}{2}\,\psi\,\nabla^4\psi\), uses Phase 8's fused
+six-term direct stencil with leading truncation
+\(C_4\,h^2\,|\mathbf{k}|^6\,\psi\) at default
+\passthrough{\lstinline!Order = 2!}.
+
+For the manufactured \(\psi\), \(|\mathbf{k}| = \sqrt{3}\), so the
+biharmonic term dominates the discrete error in \(F_h\):
+
+\[
+\big| F_h - F \big| \;\sim\; \tfrac{1}{2}\,C_4\,h^2\,|\mathbf{k}|^6 \int |\psi|^2\,\dd V \;=\; \mathcal{O}(h^2),
+\]
+
+with leading-order constant of order
+\(|\mathbf{k}|^6 \cdot \pi^3 / 12 \approx 0.7\) on the chosen test
+case. At \(N = 64\), \(h^2 = (2\pi/64)^2 \approx 9.6 \times 10^{-3}\),
+giving the expected relative error \(\sim 6.7 \times 10^{-3}\) ---
+comfortably below the test's \(2 \times 10^{-2}\) tolerance.
+
+The Phase 11 convergence test asserts the log-log slope on
+\(N \in \{16, 32, 64\}\) lies in \([1.7, 2.3]\), confirming the
+\(\mathcal{O}(h^2)\) rate.
+
+\subsection{3. Algorithm}\label{phase11-algorithm}
+
+\subsubsection{File layout}\label{phase11-files}
+
+\begin{itemize}
+\tightlist
+\item
+  \href{../../../include/gridcalc/func/Functional.hpp}{\passthrough{\lstinline!include/gridcalc/func/Functional.hpp!}}
+  --- \passthrough{\lstinline!evaluate!} extended with the 4-arg branch
+  at the head of the dispatch ladder.
+\item
+  \href{../../../test/pfc_functional_test.cpp}{\passthrough{\lstinline!test/pfc\_functional\_test.cpp!}}
+  --- the five Phase 11 tests
+  (\passthrough{\lstinline!HandComputedAtN64!},
+  \passthrough{\lstinline!SecondOrderConvergence!},
+  \passthrough{\lstinline!PsiOnlyArityStillWorks!},
+  \passthrough{\lstinline!GinzburgLandauStillWorks!},
+  \passthrough{\lstinline!SpectralCrossCheck!}).
+\end{itemize}
+
+\subsubsection{Dispatch-ladder
+extension}\label{phase11-dispatch}
+
+The \passthrough{\lstinline!if constexpr!} ladder in
+\passthrough{\lstinline!evaluate!} now has four branches, ordered from
+longest to shortest arity so the longest-matching arity wins under the
+existing tie-breaking rule:
+
+\begin{lstlisting}[language={C++}]
+if constexpr (std::is_invocable_r_v<double, F&,
+                                    double, const Vec3d&, double, double>) {
+  const auto grad   = diff::gradient(psi);
+  const auto lap    = diff::laplacian(psi);
+  const auto biharm = diff::biharmonic(psi);
+  // pointwise: integrand(i,j,k) = f(psi, grad, lap, biharm)(i,j,k)
+} else if constexpr (std::is_invocable_r_v<double, F&,
+                                           double, const Vec3d&, double>) { /* 3-arg */ }
+  else if constexpr (std::is_invocable_r_v<double, F&,
+                                           double, const Vec3d&>) { /* 2-arg */ }
+  else if constexpr (std::is_invocable_r_v<double, F&, double>) { /* 1-arg */ }
+  else { static_assert(deferred_false<F>::value, "..."); }
+\end{lstlisting}
+
+The trailing \passthrough{\lstinline!static_assert!} message
+enumerates all four supported arities. The
+\passthrough{\lstinline!detail::deferred_false!} idiom is required
+because plain
+\passthrough{\lstinline!static_assert(false, ...)!} inside an
+\passthrough{\lstinline!if constexpr!} block fires unconditionally
+under C++17 (this trick was already in place from Phase 4).
+
+\subsubsection{Eager materialization}\label{phase11-eager}
+
+When the 4-arg branch matches, three temporary fields are allocated:
+
+\begin{itemize}
+\tightlist
+\item one \passthrough{\lstinline!Field<Vec3d>!} for the gradient (\(3 \times 8 = 24\) bytes per grid point);
+\item one \passthrough{\lstinline!Field<double>!} for the Laplacian (8 bytes per grid point);
+\item one \passthrough{\lstinline!Field<double>!} for the biharmonic (8 bytes per grid point).
+\end{itemize}
+
+Plus the \passthrough{\lstinline!Field<double>!} integrand. At
+\passthrough{\lstinline!N = 64!}, total intermediate memory is
+\((24 + 8 + 8 + 8)\cdot 64^3 \approx 12.6\) MB --- well within
+working-set targets. The biharmonic pass is a single read-once,
+write-once pass over the grid (Phase 8's fused six-term stencil); the
+total algorithmic complexity is
+\(\mathcal{O}(N^3)\) per derivative materialization with one extra
+pass over the grid for the integrand fill.
+
+\subsubsection{Spectral cross-check assembly}\label{phase11-spectral}
+
+The cross-check test does not use
+\passthrough{\lstinline!evaluate!} --- the spectral derivatives are
+computed once by
+\passthrough{\lstinline!spectral::laplacian!} and
+\passthrough{\lstinline!spectral::biharmonic!}, the same
+\passthrough{\lstinline!pfcDensity!} helper used by the production-path
+test is called point by point with the spectrally-computed values, and
+the resulting \passthrough{\lstinline!Field<double>!} integrand is
+reduced with \passthrough{\lstinline!func::integrate!}. Because
+\(\psi\) is a single Fourier mode, the spectral derivatives are exact
+to FFT round-off and the residual versus the analytical reference is
+near machine precision. The test asserts
+\(< 10^{-12}\) relative.
+
+The test is gated by
+\passthrough{\lstinline!\#ifdef GRIDCALC\_USE\_FFT!}, mirroring the
+Phase 9 pattern in
+\passthrough{\lstinline!spectral_basic_test.cpp!}; under
+\passthrough{\lstinline!-DGRIDCALC\_USE\_FFT=OFF!} the test compiles
+out cleanly and the other four PFC tests still run.
+
+\subsection{4. Design decisions}\label{phase11-decisions}
+
+These distill the choices recorded in
+\passthrough{\lstinline!specs/2026-05-03-phase-11-higher-order-functional/requirements.md!}.
+
+\begin{itemize}
+\item
+  \textbf{Contracted-scalar-only argument shape.} The new derivative
+  argument enters the callable as a \passthrough{\lstinline!double!}
+  (the biharmonic). No \passthrough{\lstinline!Field<Tensor3>!} /
+  \passthrough{\lstinline!Field<Tensor4>!} is introduced; no packed
+  \passthrough{\lstinline!std::array<double, K>!} of unique
+  multi-index components is exposed. The PFC acceptance bar requires
+  only the contracted scalars, and rank-3 / rank-4 tensor types belong
+  with Phase 13/14's vector/tensor field work --- pulling them
+  forward without those use cases would be premature design.
+\item
+  \textbf{No \(\nabla^3\psi\) argument.} \(\nabla^3\psi\) has no
+  useful scalar contraction; the natural rank-1 form
+  \(\nabla(\nabla^2\psi)\) is a \passthrough{\lstinline!Vec3d!} that
+  PFC does not exercise. Adding it speculatively would expand the
+  arity-detection table without a motivating use case. Defer to
+  whichever phase first needs it.
+\item
+  \textbf{Discrete SFINAE arities, not a variadic context object.}
+  Mirrors Phase 4's existing pattern; one new
+  \passthrough{\lstinline!if constexpr!} branch is the smallest delta
+  that materializes only the derivatives the matched arity needs. A
+  variadic / context-object redesign (e.g., a single
+  \passthrough{\lstinline!FieldPoint!} struct with lazy
+  \passthrough{\lstinline!psi() / grad() / lap() / biharm()!}
+  accessors) was considered and rejected for Phase 11 as a larger
+  redesign of Phase 4's surface than this phase's deliverables warrant
+  --- may be revisited when Phase 14's parameter pack widens further.
+\item
+  \textbf{Contraction expression templates deferred to Phase 14.} With
+  the contracted-scalar-only argument shape, no rank-3 / rank-4
+  intermediate tensor is ever materialized, so the rank-6 explosion
+  the ET layer is meant to fend off does not appear in Phase 11. The
+  ET design choices are driven by the rank-2-and-higher field
+  arguments that arrive in Phase 13/14.
+\item
+  \textbf{Hand-computed reference + spectral cross-check.} The roadmap
+  acceptance bar is the FD-path hand-computed test; the spectral
+  cross-check (using Phase 9's
+  \passthrough{\lstinline!spectral::biharmonic!}) is added as an
+  independent numerical path verifying the analytical reference itself.
+  The Phase 9 FD--FFT cross-check fixture is \emph{not} extended ---
+  it parameterizes over individual FD operators, and
+  \passthrough{\lstinline!func::evaluate!} is not itself an FD
+  operator. The PFC spectral cross-check lives in the Phase 11 test
+  file.
+\item
+  \textbf{Direct biharmonic stencil, not
+  \passthrough{\lstinline!laplacian(laplacian(...))!}.} Inherited from
+  Phase 8. The composition would converge at the right order but with
+  a different leading-error constant (the stride-2 phenomenon). The
+  direct stencil keeps the leading constant at the published value,
+  which is what the convergence test relies on.
+\end{itemize}
+
+\subsection{5. References}\label{phase11-references}
+
+External:
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Elder, K. R., \& Grant, M. (2004). \emph{Modeling elastic
+  and plastic deformations in nonequilibrium processing using phase
+  field crystals}. Physical Review E, 70(5), 051605.}
+  \url{https://doi.org/10.1103/PhysRevE.70.051605}. The canonical
+  reference for the PFC functional in the form used above; defines the
+  kernel
+  \((q_0^2 + \nabla^2)^2\) and the relationship between
+  \(\epsilon\) and the crystallization transition.
+\item
+  \textbf{Provatas, N., \& Elder, K. R. (2010). \emph{Phase-Field
+  Methods in Materials Science and Engineering}. Wiley-VCH.} ISBN
+  978-3-527-40747-7.
+  Chapter 7 (``Phase-field crystal models'') gives a textbook
+  treatment of PFC functionals and the equivalence
+  \(\int \psi\,\nabla^4\psi\,\dd V = \int |\nabla^2\psi|^2\,\dd V\) on
+  periodic domains used in \Cref{phase11-why-direct}.
+\item
+  \textbf{Boyd, J. P. (2001). \emph{Chebyshev and Fourier Spectral
+  Methods} (2nd ed.). Dover.} Permanent URL:
+  \url{https://depts.washington.edu/ph506/Boyd.pdf}. The
+  band-limited-input requirement that underwrites the spectral
+  cross-check's machine-precision agreement bound in
+  \Cref{phase11-spectral}.
+\item
+  \textbf{Swift, J., \& Hohenberg, P. C. (1977). \emph{Hydrodynamic
+  fluctuations at the convective instability}. Physical Review A,
+  15(1), 319--328.}
+  \url{https://doi.org/10.1103/PhysRevA.15.319}. The original
+  Swift--Hohenberg model whose
+  \((q_0^2 + \nabla^2)^2\) kernel underlies the PFC free energy.
+\end{itemize}
+
+Internal cross-references (do not satisfy the ``external'' minimum):
+
+\begin{itemize}
+\tightlist
+\item
+  \Cref{chap:dev:functional-evaluation} --- Phase 4
+  \passthrough{\lstinline!func::evaluate!} surface (3-arg arity, SFINAE
+  pattern).
+\item
+  \Cref{chap:dev:higher-order-spatial-derivatives} --- Phase 8
+  biharmonic fused-stencil derivation and the avoidance of
+  \passthrough{\lstinline!laplacian!} composition.
+\item
+  \Cref{chap:dev:spectral-verification-harness} --- Phase 9 spectral
+  operators used by the cross-check.
+\end{itemize}
