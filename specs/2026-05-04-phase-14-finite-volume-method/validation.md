@@ -3,9 +3,10 @@
 ## Build
 
 - [ ] CI green on Ubuntu GCC and Ubuntu Clang (Apple Clang + MSVC remain Phase 22 — renumbered).
-- [ ] `docs-build` and `docs-lint` jobs green; new chapter 14 (User Guide) and chapter 13 (Developer Note) render with internal cross-references resolving.
-- [ ] `\since`-tag lint passes — every new public symbol (`fvm::cellLaplacian`, the heterogeneous-D `solve::diffuse` overload) carries `\since 0.14.0`.
+- [ ] `docs-build` and `docs-lint` jobs green; new chapter 14 (User Guide) and chapter 13 (Developer Note) render with internal cross-references resolving; the three committed PNG snapshots from the heterogeneous-diffusion demo are embedded.
+- [ ] `\since`-tag lint passes — every new public symbol (`fvm::cellLaplacian`, the heterogeneous-D `solve::diffuse` overload) carries `\since 0.14.0`. Helpers under `examples/common/` are not on the lint surface.
 - [ ] Phase 9's FD–FFT cross-check fixture still passes — Phase 14 adds no new FD operators.
+- [ ] `GRIDCALC_BUILD_EXAMPLES=ON` builds `heterogeneous_diffusion` cleanly under the project's strict warning set on both CI compilers (mirroring Phase 12's CH demo wiring).
 - [ ] Warnings clean under `-Wall -Wextra -Wpedantic -Wconversion`.
 - [ ] `clang-format` / `clang-tidy` clean.
 
@@ -29,18 +30,25 @@
 - [ ] `HeterogeneousD_RejectsCFLViolation` — `dt` above the heterogeneous CFL bound (`D_max · dt · Σ_a 1/h_a² > Tag::diffusionCFLLimit`) throws `std::invalid_argument`.
 - [ ] `HeterogeneousD_MassConservedOverTimeStepping` — `Σ ψ` conserved to round-off across many integration steps.
 
-### Acceptance — end-to-end manufactured-solution
+### Acceptance — end-to-end (Group 6)
 
-- [ ] `HeterogeneousD_AnalyticalEndToEnd` — for a 1D-flavored manufactured solution with closed-form decay under heterogeneous diffusion, the discrete trajectory at `t = 1.0` matches the analytical answer to `O(h²)` tolerance on `N ∈ {32, 64}`. Discharges the roadmap acceptance bar.
+- [ ] `RecoversAnalyticalEigenfunctionAtOrder2` — heterogeneous-D code path with uniform `D = 0.1` on the `sin(x) sin(y) sin(z)` eigenfunction; convergence to `exp(-3 D t) · sin(x) sin(y) sin(z)` at order 2 on `N ∈ {16, 24, 32}` with slope ∈ `[1.6, 2.4]`. Discharges the roadmap acceptance bar via a known-analytical reference on the new code path.
+- [ ] `HeterogeneousDQualitativeProperties` — genuinely varying `D(x) = 0.10 + 0.05 cos(x)` (range [0.05, 0.15]) with a Gaussian peak IC; 200 RK4 steps in 4 chunks. Asserts mass conservation, `max|ψ|` monotonically non-increasing across chunks, and `ψ ≥ 0` throughout. Discharges the qualitative half of the acceptance bar (no analytical reference required).
+
+### Demo CI gate (Group 7)
+
+- [ ] `examples/heterogeneous_diffusion.cpp` builds and exits 0 on its `--help` smoke run.
+- [ ] `test/heterogeneous_diffusion_test.cpp` runs the demo's helpers end-to-end on a small grid (`N=24`, ~200 steps, ~20–30 s budget) and asserts mass conservation, L²-norm monotone-decrease, and positivity preservation. Mirrors the Phase 12 `cahn_hilliard_test.cpp` static-cached-snapshot pattern.
 
 ### Regression
 
-- [ ] All previously-passing tests remain green (243 prior on `clang-debug`, 167 prior on `clang-debug-nofft`). Phase 14 adds ~10 new tests across three files.
+- [ ] All previously-passing tests remain green (243 prior on `clang-debug`, 167 prior on `clang-debug-nofft`). Phase 14 adds ~14 new tests across four files (3 cellLaplacian unit tests in Group 3 + 3 in Group 4 + 4 in Group 5 + 2 acceptance tests in Group 6 + ~2 demo tests in Group 7).
 
 ## Documentation
 
-- [ ] User Guide chapter 14 (`docs/user-guide/chapters/14-finite-volume-method.tex`) — full chapter with motivation (FVM vs. FD), cell-flux discretization, harmonic-mean averaging, heterogeneous-`solve::diffuse` API, and the manufactured-solution acceptance test as a worked example.
-- [ ] Developer Note chapter 13 (`docs/developer-note/chapters/13-finite-volume-method.tex`) — five-section structure with non-empty References (LeVeque 2007, Patankar 1980, Hundsdorfer & Verwer 2003, Eigen project docs at minimum).
+- [ ] User Guide chapter 14 (`docs/user-guide/chapters/14-finite-volume-method.tex`) — full chapter with motivation (FVM vs. FD), cell-flux discretization, harmonic-mean averaging, heterogeneous-`solve::diffuse` API, the textbook demo walkthrough, and three committed PNG snapshots showing Gaussian spreading through a heterogeneous-D field at early / mid / late times.
+- [ ] Developer Note chapter 13 (`docs/developer-note/chapters/13-finite-volume-method.tex`) — five-section structure with non-empty References (LeVeque 2007, Patankar 1980, Hundsdorfer & Verwer 2003, Eigen project docs at minimum). Design-decisions section documents the manufactured-solution trap from Group 6 so future readers don't re-step it.
+- [ ] Three coarsening / spreading snapshot PNGs committed under `docs/user-guide/figures/heterogeneous-diffusion/{early,mid,late}.png`, generated via a new `scripts/render_diffusion_snapshots.py` (matplotlib "Agg" backend, mirrors the Phase 12 pattern).
 - [ ] Both `main.tex` files updated with `\input{}` lines.
 - [ ] Both LaTeX skeletons rebuild cleanly via `scripts/build-docs.sh`.
 - [ ] `CHANGELOG.md` has a new `## 0.14.0 — Phase 14` block. The block explicitly calls out the roadmap renumber so future readers can correlate "Phase 14" in earlier blocks with the renamed phase.
