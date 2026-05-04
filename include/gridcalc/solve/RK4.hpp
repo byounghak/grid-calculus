@@ -57,7 +57,7 @@ inline core::Field<double> axpyFresh(const core::Field<double>& a,
 }  // namespace detail
 
 /// \brief Advances `psi` by `n_steps` classic-RK4 steps of size `dt`,
-///        with $\dot\psi = \mathrm{rhs}(\psi)$.
+///        with $\partial_t\psi = \mathrm{rhs}(\psi)$.
 ///
 /// Per step (the Butcher tableau weights `(1/6, 1/3, 1/3, 1/6)`):
 /// \verbatim
@@ -77,7 +77,7 @@ inline core::Field<double> axpyFresh(const core::Field<double>& a,
 /// `RK4::diffusionCFLLimit` for the heat-equation bound.
 /// \tparam Rhs    RHS callable type; deduced from the argument.
 /// \param psi     The state field; mutated in place.
-/// \param rhs     The right-hand side $\dot\psi = \mathrm{rhs}(\psi)$.
+/// \param rhs     The right-hand side $\partial_t\psi = \mathrm{rhs}(\psi)$.
 /// \param dt      Time step. Must be `>= 0`.
 /// \param n_steps Number of steps to advance. Must be `>= 0`.
 /// \param tag     Empty `RK4{}` tag for dispatch.
