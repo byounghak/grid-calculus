@@ -13,6 +13,7 @@
 
 #include <gridcalc/core/EigenAliases.hpp>
 #include <gridcalc/core/Field.hpp>
+#include <gridcalc/diff/detail/PreconditionAxisExtent.hpp>
 #include <gridcalc/stencil/FirstDerivative.hpp>
 
 namespace gridcalc::diff {
@@ -35,11 +36,17 @@ namespace gridcalc::diff {
 ///                (Phase 2) and `4` (Phase 7) are specialized.
 /// \param field  Input scalar field.
 /// \returns A new `Field<Vec3d>` holding $\nabla f$ at every grid point.
-/// \since 0.2.0 (function); 0.7.0 (`Order` parameter).
+/// \throws std::invalid_argument if any axis of `field`'s grid has
+///         extent `N < 2 * FirstDerivative<Order>::radius + 1`. See
+///         `diff::detail::requireAxisExtent`.
+/// \since 0.2.0 (function); 0.7.0 (`Order` parameter); 0.14.1 (precondition).
 template <int Order = 2>
 inline core::Field<core::Vec3d> gradient(const core::Field<double>& field) {
   using Coeffs = stencil::FirstDerivative<Order>;
   const auto& grid = field.getGrid();
+  detail::requireAxisExtent("x", grid.getNx(), Coeffs::radius);
+  detail::requireAxisExtent("y", grid.getNy(), Coeffs::radius);
+  detail::requireAxisExtent("z", grid.getNz(), Coeffs::radius);
   const auto& h = grid.getCellSize();
   const double inv_hx = 1.0 / h(0);
   const double inv_hy = 1.0 / h(1);
@@ -86,11 +93,17 @@ inline core::Field<core::Vec3d> gradient(const core::Field<double>& field) {
 ///                (Phase 2) and `4` (Phase 7) are specialized.
 /// \param field   Input vector field.
 /// \returns A new `Field<Mat3d>` holding `∂_j v_i` at every grid point.
-/// \since 0.13.0
+/// \throws std::invalid_argument if any axis of `field`'s grid has
+///         extent `N < 2 * FirstDerivative<Order>::radius + 1`. See
+///         `diff::detail::requireAxisExtent`.
+/// \since 0.13.0 (function); 0.14.1 (precondition).
 template <int Order = 2>
 inline core::Field<core::Mat3d> gradient(const core::Field<core::Vec3d>& field) {
   using Coeffs = stencil::FirstDerivative<Order>;
   const auto& grid = field.getGrid();
+  detail::requireAxisExtent("x", grid.getNx(), Coeffs::radius);
+  detail::requireAxisExtent("y", grid.getNy(), Coeffs::radius);
+  detail::requireAxisExtent("z", grid.getNz(), Coeffs::radius);
   const auto& h = grid.getCellSize();
   const double inv_hx = 1.0 / h(0);
   const double inv_hy = 1.0 / h(1);

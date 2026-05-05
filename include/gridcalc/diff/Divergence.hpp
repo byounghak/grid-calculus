@@ -13,6 +13,7 @@
 
 #include <gridcalc/core/EigenAliases.hpp>
 #include <gridcalc/core/Field.hpp>
+#include <gridcalc/diff/detail/PreconditionAxisExtent.hpp>
 #include <gridcalc/stencil/FirstDerivative.hpp>
 
 namespace gridcalc::diff {
@@ -35,11 +36,17 @@ namespace gridcalc::diff {
 ///                (Phase 2) and `4` (Phase 7) are specialized.
 /// \param vfield  Input vector field, components stored as `Vec3d` per grid point.
 /// \returns A new `Field<double>` holding $\nabla \cdot \mathbf{V}$ at every grid point.
-/// \since 0.2.0 (function); 0.7.0 (`Order` parameter).
+/// \throws std::invalid_argument if any axis of `vfield`'s grid has
+///         extent `N < 2 * FirstDerivative<Order>::radius + 1`. See
+///         `diff::detail::requireAxisExtent`.
+/// \since 0.2.0 (function); 0.7.0 (`Order` parameter); 0.14.1 (precondition).
 template <int Order = 2>
 inline core::Field<double> divergence(const core::Field<core::Vec3d>& vfield) {
   using Coeffs = stencil::FirstDerivative<Order>;
   const auto& grid = vfield.getGrid();
+  detail::requireAxisExtent("x", grid.getNx(), Coeffs::radius);
+  detail::requireAxisExtent("y", grid.getNy(), Coeffs::radius);
+  detail::requireAxisExtent("z", grid.getNz(), Coeffs::radius);
   const auto& h = grid.getCellSize();
   const double inv_hx = 1.0 / h(0);
   const double inv_hy = 1.0 / h(1);
@@ -86,11 +93,17 @@ inline core::Field<double> divergence(const core::Field<core::Vec3d>& vfield) {
 ///                (Phase 2) and `4` (Phase 7) are specialized.
 /// \param mfield  Input rank-2 tensor field.
 /// \returns A new `Field<Vec3d>` holding `(div M)_i = ∂_j M(i, j)` at every grid point.
-/// \since 0.13.0
+/// \throws std::invalid_argument if any axis of `mfield`'s grid has
+///         extent `N < 2 * FirstDerivative<Order>::radius + 1`. See
+///         `diff::detail::requireAxisExtent`.
+/// \since 0.13.0 (function); 0.14.1 (precondition).
 template <int Order = 2>
 inline core::Field<core::Vec3d> divergence(const core::Field<core::Mat3d>& mfield) {
   using Coeffs = stencil::FirstDerivative<Order>;
   const auto& grid = mfield.getGrid();
+  detail::requireAxisExtent("x", grid.getNx(), Coeffs::radius);
+  detail::requireAxisExtent("y", grid.getNy(), Coeffs::radius);
+  detail::requireAxisExtent("z", grid.getNz(), Coeffs::radius);
   const auto& h = grid.getCellSize();
   const double inv_hx = 1.0 / h(0);
   const double inv_hy = 1.0 / h(1);
