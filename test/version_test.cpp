@@ -4,6 +4,6 @@
 
 #include <gridcalc/version.hpp>
 
-TEST(VersionTest, ReturnsZeroFourteenFive) {
-    EXPECT_EQ(std::string_view{gridcalc::version()}, std::string_view{"0.14.5"});
+TEST(VersionTest, ReturnsZeroFifteenZero) {
+    EXPECT_EQ(std::string_view{gridcalc::version()}, std::string_view{"0.15.0"});
 }

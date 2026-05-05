@@ -1,0 +1,341 @@
+\chapter{Functional evaluation for vector / tensor data}
+\label{chap:dev:tensor-functional}
+
+\begin{quote}
+Phase metadata. Spec dir:
+\passthrough{\lstinline!specs/2026-05-05-phase-15-tensor-functional/!}.
+Generalizes \passthrough{\lstinline!func::evaluate!} to
+\passthrough{\lstinline!Field<Vec3d>!} input with two SFINAE-detected
+callable arities (\(\mathbf u\); \(\mathbf u, \nabla\mathbf u\)) and adds a
+contraction expression-template (ET) layer that fuses
+\passthrough{\lstinline!Field<Mat3d>!} pointwise arithmetic into the
+\passthrough{\lstinline!func::integrate!} reduction. The roadmap
+acceptance bar is the closed-form match of the linear-elastic energy
+\(F = \int \tfrac12\,\boldsymbol{\sigma}\!:\!\boldsymbol{\varepsilon}\,dV\)
+on a periodic uniaxial dilation wave. Version target:
+\passthrough{\lstinline!0.15.0!}.
+\end{quote}
+
+\subsection{1. Theory}\label{phase15-theory}
+
+\subsubsection{Tensor-rank arithmetic on \texorpdfstring{$\mathbb{R}^3$}{R3}}\label{phase15-rank}
+
+Phase 13 settled the rank-2 surface for tensor fields, with
+\(M(i, j) = \partial_j v_i\) the velocity-gradient convention so that
+\(\mathrm{tr}(\nabla \mathbf v) = \nabla\!\cdot\!\mathbf v\). Phase 15
+takes the obvious next step: a functional surface that consumes a
+\passthrough{\lstinline!Field<Vec3d>!} and (optionally) its rank-2
+gradient. Higher derivatives of vector fields would consume rank-3 or
+rank-4 outputs --- those types are deferred per the AskUserQuestion
+answer.
+
+The contractions used in this phase
+(\passthrough{\lstinline!trace!},
+\passthrough{\lstinline!singleContract!},
+\passthrough{\lstinline!doubleContract!},
+\passthrough{\lstinline!sym!}) are all rank-2-in / rank-{0,2}-out:
+\(\mathrm{tr}(\mathbf M) = M_{ii}\),
+\((\mathbf A \cdot \mathbf B)_{ij} = A_{ik} B_{kj}\) (matrix product),
+\(\mathbf A : \mathbf B = A_{ij} B_{ij}\),
+\(\mathrm{sym}(\mathbf M) = \tfrac12(\mathbf M + \mathbf M^\top)\). Einstein
+summation is implicit.
+
+\subsubsection{Isotropic linear elasticity}\label{phase15-elasticity}
+
+The constitutive law in Lamé form is
+\[
+\boldsymbol{\sigma}(\boldsymbol{\varepsilon})
+\;=\; \lambda\,\mathrm{tr}(\boldsymbol{\varepsilon})\,\mathbf{I}
+   \;+\; 2\mu\,\boldsymbol{\varepsilon}.
+\]
+Strain is the symmetric part of the displacement gradient:
+\(\boldsymbol{\varepsilon} = \tfrac12(\nabla\mathbf u + (\nabla\mathbf u)^\top)\).
+The elastic-energy density is
+\[
+W(\boldsymbol{\varepsilon})
+\;=\; \tfrac12\,\boldsymbol{\sigma}:\boldsymbol{\varepsilon}
+\;=\; \tfrac12\!\left[\lambda\,\mathrm{tr}(\boldsymbol{\varepsilon})^2
+                     + 2\mu\,\boldsymbol{\varepsilon}:\boldsymbol{\varepsilon}\right].
+\]
+The simplification eliminates the rank-2 stress
+\(\boldsymbol{\sigma}\) from the integrand --- the right-hand side is a
+linear combination of two scalar-valued contractions of
+\(\boldsymbol{\varepsilon}\). The ET layer's natural unit of work is
+exactly this form.
+
+\subsection{2. Math derivation}\label{phase15-math}
+
+\subsubsection{Closed form on a periodic uniaxial dilation wave}\label{phase15-closed}
+
+The roadmap "stretched cubic block" geometry on a periodic box is
+realized by
+\(\mathbf u(x, y, z) = (\alpha\sin(k_0 x), 0, 0)\) with \(k_0 = 1\) on
+\([0, 2\pi]^3\). The displacement gradient is
+\[
+\nabla \mathbf u
+\;=\;
+\begin{pmatrix}
+\alpha\cos(k_0 x) & 0 & 0\\
+0 & 0 & 0\\
+0 & 0 & 0
+\end{pmatrix},
+\]
+which is already symmetric, so
+\(\boldsymbol{\varepsilon} = \nabla\mathbf u\),
+\(\mathrm{tr}(\boldsymbol{\varepsilon}) = \alpha\cos(k_0 x)\), and
+\(\boldsymbol{\varepsilon}:\boldsymbol{\varepsilon}
+= \alpha^2\cos^2(k_0 x)\). Substituting into \(W\):
+\[
+W(x)
+\;=\; \tfrac12\,\big(\lambda + 2\mu\big)\,\alpha^2\cos^2(k_0 x).
+\]
+Integrating over the box,
+\[
+F_{\mathrm{ref}}
+\;=\; \tfrac12\,(\lambda + 2\mu)\,\alpha^2
+\,\Big[\textstyle\int_0^{2\pi}\!\cos^2(k_0 x)\,dx\Big]
+\,(2\pi)^2
+\;=\; 2\pi^3\,(\lambda + 2\mu)\,\alpha^2.
+\]
+The result is independent of which axis carries the wave (by
+symmetry); the helper
+\passthrough{\lstinline!analyticalLinearElasticEnergy!} retains
+\passthrough{\lstinline!axis!} as a parameter only for documenting
+intent at the call site.
+
+For \(E = 1\), \(\nu = 0.3\): \(\lambda = 0.576923\), \(\mu = 0.384615\),
+\(\lambda + 2\mu = 1.346154\); at \(\alpha = 0.01\),
+\(F_{\mathrm{ref}} = 2\pi^3 \cdot 1.346154 \cdot 10^{-4}
+\approx 8.348\times 10^{-3}\).
+
+\subsubsection{Convergence order}\label{phase15-convergence}
+
+The discrete energy inherits the order of the underlying gradient
+operator \(\nabla\mathbf u\). Phase 7's
+\passthrough{\lstinline!diff::gradient(Field<Vec3d>)!} ships at
+default order 2 (the order-4 stencil is available with explicit
+\passthrough{\lstinline!<Order=4>!}; the new
+\passthrough{\lstinline!func::evaluate!} overload forwards to the
+default). The discrete energy therefore converges as
+\(O(h^2)\) on the periodic uniaxial wave. The acceptance test gate at
+\(N = 64\) asks for relative error \(< 5\times 10^{-3}\); the
+convergence sweep on \(N \in \{16, 32, 64\}\) gates the rate to
+\(\log_2(e_N / e_{2N}) \in [1.6, 2.4]\).
+
+\subsection{3. Algorithm}\label{phase15-algo}
+
+\subsubsection{File layout}\label{phase15-files}
+
+\begin{itemize}
+\tightlist
+\item
+  \passthrough{\lstinline!include/gridcalc/tensor/Expressions.hpp!} ---
+  the contraction-ET nodes, operator overloads, factory helpers, and
+  \passthrough{\lstinline!materialize!} / \passthrough{\lstinline!is\_expr!} traits.
+\item
+  \passthrough{\lstinline!include/gridcalc/func/Functional.hpp!} ---
+  extended with the
+  \passthrough{\lstinline!evaluate(Field<Vec3d>, F\&\&, Tag)!} overload.
+\item
+  \passthrough{\lstinline!include/gridcalc/func/Integrate.hpp!} ---
+  extended with the fused
+  \passthrough{\lstinline!integrate(E expr, Tag)!} overload (gated on
+  \passthrough{\lstinline!tensor::expr::is\_expr\_v<E> \&\& value\_type<E> == double!}).
+\item
+  \passthrough{\lstinline!examples/common/elastic\_energy.hpp!} ---
+  shared helpers (Lamé constants, manufactured displacement, energy
+  density, closed-form reference).
+\item
+  \passthrough{\lstinline!examples/elastic\_energy.cpp!} --- runnable
+  CLI demo with VTK output.
+\item
+  \passthrough{\lstinline!test/tensor\_expressions\_test.cpp!},
+  \passthrough{\lstinline!test/func\_evaluate\_vector\_test.cpp!},
+  \passthrough{\lstinline!test/elastic\_energy\_test.cpp!},
+  \passthrough{\lstinline!test/elastic\_energy\_demo\_test.cpp!} ---
+  the four new test files.
+\end{itemize}
+
+\subsubsection{The \texttt{evalAt} recursion}\label{phase15-evalat}
+
+Each ET node exposes
+\(\texttt{value\_type evalAt(int i, int j, int k) const noexcept}\). The
+node holds its operands by value (composing nodes own their children)
+and forwards \texttt{evalAt} down the tree:
+
+\begin{itemize}
+\tightlist
+\item
+  \passthrough{\lstinline!Leaf<T>!} holds a non-owning
+  \passthrough{\lstinline!const Field<T>*!}; \passthrough{\lstinline!evalAt!}
+  reads the wrapped field. The lifetime contract is documented in the
+  Doxygen.
+\item
+  \passthrough{\lstinline!IdentityField!} returns
+  \passthrough{\lstinline!Mat3d::Identity()!} regardless of \((i, j, k)\);
+  no per-cell storage.
+\item
+  \passthrough{\lstinline!Scaled<E>!} stores the scalar and the inner
+  expression by value; \passthrough{\lstinline!evalAt!} returns
+  \(c \cdot \mathrm{inner.evalAt}(i, j, k)\).
+\item
+  \passthrough{\lstinline!Plus<L, R>!}, \passthrough{\lstinline!Minus<L, R>!},
+  \passthrough{\lstinline!Mul<L, R>!} (scalar-only) recurse into both children.
+\item
+  \passthrough{\lstinline!Trace<E>!} returns
+  \(\mathrm{inner.evalAt}(i,j,k).\texttt{trace()}\).
+\item
+  \passthrough{\lstinline!Sym<E>!} returns
+  \(\tfrac12(M + M^\top)\) at the cell.
+\item
+  \passthrough{\lstinline!SingleContract<L, R>!} returns
+  \(\mathrm{lhs} \cdot \mathrm{rhs}\) (Eigen
+  \passthrough{\lstinline!Matrix3d::operator*!}).
+\item
+  \passthrough{\lstinline!DoubleContract<L, R>!} returns
+  \((\mathrm{lhs}.array() * \mathrm{rhs}.array()).sum()\).
+\end{itemize}
+
+A static-assert on each combinator gates the
+\passthrough{\lstinline!value\_type!} of its operands so a
+mismatched-rank composition (e.g.\ adding a
+\passthrough{\lstinline!double!}-valued and a
+\passthrough{\lstinline!Mat3d!}-valued expression) fails at the call
+site with a readable message rather than a depth-N template
+instantiation trace.
+
+\subsubsection{The fused \texttt{func::integrate(expr, tag)}}\label{phase15-fused}
+
+Implementation:
+
+\begin{verbatim}
+template <class E, class Tag = Pairwise,
+          std::enable_if_t<tensor::expr::is_expr_v<E>
+                            && std::is_same_v<typename std::decay_t<E>::value_type, double>,
+                           int> = 0>
+inline double integrate(const E& expr, Tag tag = {}) {
+    return integrate(tensor::expr::materialize(expr), tag);
+}
+\end{verbatim}
+
+The forwarding-to-scalar-overload is the simplest correct
+implementation: it allocates one
+\passthrough{\lstinline!Field<double>!} for the scalar integrand, then
+hands that to the existing pairwise / Neumaier reducer. The
+\emph{point} of the overload is what it does \emph{not} allocate ---
+no \passthrough{\lstinline!Field<Mat3d>!} is built for
+\(\boldsymbol{\sigma}\), \(\boldsymbol{\varepsilon}\), or any
+intermediate combination thereof. That's a 9\(\times\) memory savings
+per intermediate compared with the pre-Phase-15 eager path.
+
+\subsubsection{Algorithmic complexity}\label{phase15-complexity}
+
+\(O(N^3)\) per cell evaluation regardless of expression depth (the
+\passthrough{\lstinline!evalAt!} recursion is constant-depth at
+compile time, and Eigen's
+\passthrough{\lstinline!Matrix3d::operator*!} /
+\passthrough{\lstinline!.array().sum()!} are constant per cell).
+\(O(N^3)\) memory for the scalar integrand allocated by the fused
+\passthrough{\lstinline!integrate!} overload. The pre-ET-layer eager
+path on \(\tfrac12(\lambda + 2\mu)\,\boldsymbol{\sigma}:\boldsymbol\varepsilon\)
+allocates two extra \passthrough{\lstinline!Field<Mat3d>!} blocks
+(one for \(\boldsymbol{\sigma}\), one for \(\boldsymbol{\varepsilon}\)) ---
+each \(9\times\) the integrand's memory --- so the ET layer's working
+set is \(\sim 19\times\) smaller for the elastic-energy demo.
+
+\subsection{4. Design decisions}\label{phase15-design}
+
+The four AskUserQuestion answers from the spec round, plus the
+periodic-uniaxial-wave substitution, are recorded in
+\passthrough{\lstinline!specs/2026-05-05-phase-15-tensor-functional/requirements.md!}
+under "Decisions made for this feature." Brief reprise:
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{ET layer lands now.} The user requested the ET surface
+  alongside the elastic-energy demo, even though the rank-2-only
+  inputs do not strictly trigger the rank-6 explosion the ET layer was
+  originally proposed to fend off (Phase 11 / Phase 13 deferral). The
+  scope here is bounded: ten nodes, all rank-2-or-lower, with
+  Phase 13's eager primitives kept untouched in parallel.
+\item
+  \textbf{Rank-3 / rank-4 tensor types deferred.}
+  \(\boldsymbol\varepsilon = \mathrm{sym}(\nabla\mathbf u)\) is the
+  highest rank we touch; the integrand reduces to two
+  rank-2-contraction terms before any rank-3 surface enters the
+  picture. The Eigen-unsupported-tensor-module portability question
+  stays deferred.
+\item
+  \textbf{Demo material parameters: standard \(E = 1\), \(\nu = 0.3\),
+  \(\alpha = 0.01\)} on the standard \([0, 2\pi]^3\) box. The
+  closed-form constant \(F_{\mathrm{ref}} = 2\pi^3(\lambda + 2\mu)\alpha^2\)
+  drops out; the convergence test gate sits in
+  \([1.6, 2.4]\) for the \(O(h^2)\) rate.
+\item
+  \textbf{Demo binary ships, not test-only.} Mirrors Phase 12 / 14;
+  three committed PNG snapshots (small / medium / large \(\alpha\))
+  embedded in the User Guide chapter.
+\item
+  \textbf{Periodic-uniaxial-wave substitution.} A literal rigid
+  uniaxial stretch \(u_x = \alpha\,x\) is not periodic on
+  \([0, 2\pi]^3\) and breaks the only-\passthrough{\lstinline!Periodic!}
+  policy. The dilation wave \(u_x = \alpha\sin(k_0 x)\) is the natural
+  periodic substitute and admits the same \((\lambda + 2\mu)\) tensor
+  signature as the rigid stretch in the closed-form energy. Phase 19
+  unlocks the literal geometry. Documented in the User Guide chapter
+  and in the test file's top-of-file comment so future contributors
+  don't re-litigate.
+\item
+  \textbf{Scalar \(\times\) scalar in the ET layer, no
+  \passthrough{\lstinline!Mat3d \(\times\) Mat3d!}.} The
+  \passthrough{\lstinline!*!} operator between two
+  \passthrough{\lstinline!double!}-valued expressions is unambiguous;
+  between two \passthrough{\lstinline!Mat3d!}-valued expressions it
+  could mean either matrix product or full contraction. The dedicated
+  \passthrough{\lstinline!singleContract!} /
+  \passthrough{\lstinline!doubleContract!} factories disambiguate at
+  the call site.
+\end{itemize}
+
+\subsection{5. References}\label{phase15-refs}
+
+\begin{itemize}
+\tightlist
+\item
+  Gurtin, M. E., Fried, E., \& Anand, L. (1981). \emph{An Introduction
+  to Continuum Mechanics}. Academic Press. ISBN 0-12-309750-9. Linear
+  isotropic elasticity, the Lamé form, and the symmetric-strain
+  derivation are in chapters 9--10.
+\item
+  Holzapfel, G. A. (2000). \emph{Nonlinear Solid Mechanics: A Continuum
+  Approach for Engineering}. Wiley. ISBN 978-0-471-82319-3. Used for
+  the chosen velocity-gradient index convention and the symmetric-stress
+  consistency arguments; chapter 6 covers linear elasticity as a
+  small-strain limit.
+\item
+  Vandevoorde, D., Josuttis, N. M., \& Gregor, D. (2017).
+  \emph{C++ Templates: The Complete Guide}, 2nd ed. Addison-Wesley.
+  ISBN 978-0-321-71412-1. Chapter 27 covers expression templates with
+  modern C++17 idioms (deduction guides, ADL-friendly operator
+  overloads, \passthrough{\lstinline!std::enable\_if\_t!} gates), the
+  template machinery the ET layer here is built on.
+\item
+  Veldhuizen, T. (1995). "Expression templates." \emph{C++ Report},
+  7(5), 26--31. \texttt{https://doi.org/10.1145/216973.216979}. The
+  founding paper for the technique.
+\item
+  Eigen project documentation: \texttt{https://eigen.tuxfamily.org/dox/}
+  --- in particular the \passthrough{\lstinline!Matrix3d!} surface
+  used pointwise inside each
+  \passthrough{\lstinline!evalAt!} call, and the matrix /
+  array-arithmetic semantics. Eigen is itself a sophisticated
+  expression-template library; the ET layer here piggybacks on Eigen's
+  per-cell expression machinery rather than reimplementing it.
+\item
+  LeVeque, R. J. (2007). \emph{Finite Difference Methods for Ordinary
+  and Partial Differential Equations}. SIAM.
+  \texttt{https://doi.org/10.1137/1.9780898717839}. Convergence-order
+  analysis for the periodic-trapezoidal-quadrature midpoint rule used
+  by \passthrough{\lstinline!func::integrate!}.
+\end{itemize}

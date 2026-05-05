@@ -19,6 +19,132 @@ project adheres to [Semantic Versioning](https://semver.org/).
 > (= today's Phase 15). Future blocks reference the post-renumber
 > numbering directly.
 
+## 0.15.0 — Phase 15: Functional evaluation for vector / tensor data
+
+Generalizes `func::evaluate` to `Field<core::Vec3d>` input with two
+SFINAE-detected callable arities, adds a contraction
+expression-template (ET) layer for fused `Field<core::Mat3d>` pointwise
+arithmetic, and ships a runnable demo binary that computes the linear
+elastic energy of a periodic uniaxial dilation wave.
+
+### Added
+
+- **`func::evaluate(Field<core::Vec3d>, callable, tag = Pairwise{})`**
+  --- two new arities:
+  - `f(const core::Vec3d& u)` — only `u` is materialized; no derivative
+    is computed.
+  - `f(const core::Vec3d& u, const core::Mat3d& grad_u)` — the rank-2
+    gradient `M(i, j) = ∂_j u_i` (Phase 13 convention) is materialized
+    once via `diff::gradient(u)` at default order 2.
+
+  Longest-arity-wins tie-break, `Pairwise` / `Kahan` reduction-tag
+  dispatch, and the static-assert failure path mirror the existing
+  scalar `Field<double>` overloads from Phase 4 / Phase 11.
+  See [include/gridcalc/func/Functional.hpp](include/gridcalc/func/Functional.hpp).
+
+- **`tensor/Expressions.hpp` — contraction expression-template layer.**
+  Ten lazy expression nodes under `gridcalc::tensor::expr`:
+  `Leaf<T>`, `IdentityField`, `Scaled<E>`, `Plus<L, R>`, `Minus<L, R>`,
+  `Mul<L, R>` (scalar-only), `Trace<E>`, `Sym<E>`, `SingleContract<L, R>`,
+  `DoubleContract<L, R>`. Operator overloads for `+`, `-`, unary `-`,
+  scalar `*` / `/`, and scalar `*` between two `double`-valued
+  expressions. Factories: `expr::field(F)`, `expr::identityField(g)`,
+  `expr::trace(e)`, `expr::sym(e)`, `expr::singleContract(a, b)`,
+  `expr::doubleContract(a, b)`, `expr::materialize(e)`. Each node
+  exposes `evalAt(int i, int j, int k)` for per-cell evaluation.
+
+- **`func::integrate(expr, tag = Pairwise{})` overload** for any
+  contraction-ET node whose `value_type` is `double`. Equivalent in
+  numerical output to `func::integrate(expr::materialize(expr), tag)`
+  but evaluates `evalAt(...)` cell-by-cell on the way to the
+  reduction, so `Field<core::Mat3d>` intermediates never appear in
+  memory. The fused-loop path is the primary motivation for the ET
+  layer and the route the elastic-energy demo uses.
+
+- **Linear-elastic-energy worked example.**
+  - `examples/common/elastic_energy.hpp` — shared helpers under
+    `gridcalc::examples::elastic_energy::*`: `lameFromYoungPoisson`,
+    `makeUniaxialPeriodicDisplacement`, `linearElasticEnergyDensity`,
+    `analyticalLinearElasticEnergy`. Validated input ranges; the
+    closed-form helper rejects non-standard grids.
+  - `examples/elastic_energy.cpp` — runnable CLI demo gated by
+    `GRIDCALC_BUILD_EXAMPLES=ON` (the default in CI). Options:
+    `--n-x`, `--young` / `--nu`, `--lambda` / `--mu`, `--alpha`,
+    `--axis`, `--out-dir`. Prints `F_h`, `F_ref`, `rel_err`, and the
+    wall time; writes a single VTK snapshot of the axial-strain field
+    via the Phase 12 `examples/common/vtk_writer.hpp`.
+  - `scripts/render_elastic_snapshots.py` — matplotlib `Agg` backend
+    snapshot renderer (mirrors the Phase 12 / 14 pattern). Three PNG
+    snapshots committed under
+    `docs/user-guide/figures/elastic-energy/{small,medium,large}.png`
+    showing the cos-wave strain profile at
+    `α ∈ {0.005, 0.01, 0.02}` on `N = 64`.
+
+- **Acceptance tests.**
+  - `test/elastic_energy_test.cpp` (8 tests) — pointwise sanity for
+    the energy-density helper; closed-form match at `N = 64` (relative
+    error `< 5e-3`); order-2 convergence sweep on
+    `N ∈ {16, 32, 64}` with slope ∈ `[1.6, 2.4]`; axis-symmetry check;
+    cross-check between the `func::evaluate` route and the fused-ET
+    `func::integrate(expr)` route to round-off.
+  - `test/elastic_energy_demo_test.cpp` (1 test) — small CI gate at
+    `N = 24`, mirrors the Phase 12 / 14 static-cached pattern, asserts
+    `rel_err < 5e-2` and energy positive.
+  - `test/tensor_expressions_test.cpp` (17 tests) — Leaf,
+    IdentityField, Scaled, Plus, Minus, Negate, scalar-Mul, Trace,
+    Sym, SingleContract, DoubleContract correctness; nested
+    composition; identity-tensor algebra; fused-integrate equivalence
+    to `materialize`-then-`integrate` under both reduction tags.
+  - `test/func_evaluate_vector_test.cpp` (6 tests) — both new
+    arities; longest-arity tie-break; Kahan reduction; cross-check
+    against the scalar path.
+
+### Documentation
+
+- **User Guide chapter 15** (`docs/user-guide/chapters/15-tensor-functional.tex`)
+  --- the `Field<core::Vec3d>` evaluate surface, the ET layer, and the
+  elastic-energy worked example with the periodic-uniaxial-wave
+  derivation, demo walkthrough, and the three committed PNG snapshots.
+- **Developer Note chapter 14**
+  (`docs/developer-note/chapters/14-tensor-functional.tex`) --- the
+  standing five-section structure (Theory · Math derivation ·
+  Algorithm · Design decisions · References) with the closed-form
+  derivation `F_ref = 2 π³ (λ + 2μ) α²`, the `evalAt` recursion design,
+  the four AskUserQuestion answers, the periodic-uniaxial-wave
+  substitution, and references including Gurtin 1981, Holzapfel 2000,
+  Vandevoorde *et al.* *C++ Templates* 2nd ed. ch. 27, Veldhuizen 1995
+  (DOI:10.1145/216973.216979), Eigen project docs, and LeVeque 2007.
+- **Chapter slot bookkeeping.**
+  `docs/user-guide/chapters/15-diamond-lattice.tex` (a placeholder for
+  Phase 17) renamed to `17-diamond-lattice.tex` to free chapter slot 15
+  for Phase 15. Slot 16 stays empty, reserved for the future Phase 16
+  chapter. `docs/user-guide/main.tex` updated accordingly.
+
+### Decisions worth knowing (carried into STATUS.md)
+
+- **ET layer landed in Phase 15** despite the rank-2-only inputs not
+  strictly triggering the rank-6 explosion that originally motivated
+  it. The user requested the ET surface alongside the demo; the scope
+  is bounded (ten nodes, all rank-2-or-lower) with Phase 13's eager
+  primitives kept untouched in parallel.
+- **Rank-3 / rank-4 tensor types stay deferred.** `ε = sym(∇u)` is the
+  highest-rank intermediate the demo touches. The
+  `Eigen::TensorFixedSize` portability question stays in
+  STATUS.md "Open / deferred."
+- **Periodic-uniaxial-wave substitution.** A literal rigid uniaxial
+  stretch is not periodic on `[0, 2π]³` and breaks
+  `IndexPolicy::Periodic`. The dilation wave
+  `u_x = α sin(k₀ x)` is the natural substitute and admits the same
+  `(λ + 2μ)` tensor signature in the closed-form energy. Phase 19
+  unlocks the literal rigid-stretch geometry. Documented in the User
+  Guide chapter and the test file's top-of-file comment.
+
+### Test totals
+
+`clang-debug` 397 (prior 0.14.5) + 32 new = 429.
+`clang-debug-nofft` 254 (prior 0.14.5) + 32 new = 286 (none of the new
+tests touch the FFT path).
+
 ## 0.14.5 — Fix: D-grid mismatch + CFL tightening on heterogeneous-D diffusion
 
 ### Fixed
