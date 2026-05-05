@@ -17,10 +17,17 @@
 ///   `Field<Vec3d>`; one forward + three backward FFTs.
 ///
 /// Nyquist convention: for any axis with an **odd** per-axis derivative
-/// count, the mode at $n_a = N_a / 2$ (Nyquist) is set to zero before
-/// applying the spectral multiplier. This is the standard remedy for the
-/// $\pm\pi/h$ sign ambiguity at the Nyquist that would otherwise alias
-/// under the inverse transform.
+/// count **and an even axis extent `N_a`**, the mode at
+/// $n_a = N_a / 2$ (the Nyquist mode for even `N_a`) is set to zero
+/// before applying the spectral multiplier. This is the standard remedy
+/// for the $\pm\pi/h$ sign ambiguity at the Nyquist that would
+/// otherwise alias under the inverse transform.
+///
+/// **Odd `N_a` has no Nyquist mode by construction** — the highest
+/// positive harmonic is at $(N_a - 1)/2$ and is a regular real
+/// harmonic. The zeroing path is short-circuited by the parity gate
+/// (`N_a % 2 == 0`); the highest positive harmonic is preserved with
+/// its full multiplier. Verified by `test/spectral_partial_nyquist_test.cpp`.
 /// \since 0.9.0
 
 #pragma once
@@ -58,8 +65,10 @@ constexpr double powInt(double v, int n) {
 /// For each spectrum element the multiplier factors as
 /// $i^{N_x+N_y+N_z}\,k_x^{N_x}\,k_y^{N_y}\,k_z^{N_z}$. The leading
 /// $i^{N}$ is real or purely imaginary depending on $N \bmod 4$.
-/// On any axis with an **odd** derivative count, the Nyquist mode is
-/// zeroed.
+/// On any axis with an **odd** derivative count **and an even axis
+/// extent `N_a`**, the mode at $n_a = N_a / 2$ (the Nyquist) is
+/// zeroed. Odd `N_a` has no Nyquist mode and the highest positive
+/// harmonic at $(N_a - 1)/2$ keeps its full multiplier.
 /// \tparam Nx     X-axis derivative count ($\geq 0$).
 /// \tparam Ny     Y-axis derivative count ($\geq 0$).
 /// \tparam Nz     Z-axis derivative count ($\geq 0$).
