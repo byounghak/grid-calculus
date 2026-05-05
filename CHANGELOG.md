@@ -54,12 +54,14 @@ elastic energy of a periodic uniaxial dilation wave.
   exposes `evalAt(int i, int j, int k)` for per-cell evaluation.
 
 - **`func::integrate(expr, tag = Pairwise{})` overload** for any
-  contraction-ET node whose `value_type` is `double`. Equivalent in
-  numerical output to `func::integrate(expr::materialize(expr), tag)`
-  but evaluates `evalAt(...)` cell-by-cell on the way to the
-  reduction, so `Field<core::Mat3d>` intermediates never appear in
-  memory. The fused-loop path is the primary motivation for the ET
-  layer and the route the elastic-energy demo uses.
+  contraction-ET node whose `value_type` is `double`. Streams the
+  per-cell evaluator straight into the reducer --- no
+  `Field<core::Mat3d>` intermediates and no `Field<double>` scalar
+  integrand are allocated. The `Pairwise` recursion structure mirrors
+  `detail::pairwiseSum` exactly (same `kBaseCase`, same split point
+  `n / 2`); the `Kahan` walk is the same single-pass Neumaier loop. The
+  fused integrate is therefore bit-identical to
+  `func::integrate(tensor::expr::materialize(expr), tag)`.
 
 - **Linear-elastic-energy worked example.**
   - `examples/common/elastic_energy.hpp` — shared helpers under
@@ -139,10 +141,52 @@ elastic energy of a periodic uniaxial dilation wave.
   unlocks the literal rigid-stretch geometry. Documented in the User
   Guide chapter and the test file's top-of-file comment.
 
+### Fixed (review-found before merge)
+
+- **Eager `tensor::singleContract` / `tensor::doubleContract` now
+  validate matching grids** at the entry point. Same defensive-contract
+  gap that PR #20 closed for `solve::integrate` / `axpyFresh` and
+  PR #23 closed for `fvm::cellLaplacian` / `solve::diffuse`, just left
+  open in Phase 13's eager primitives until the Phase-15 review
+  surfaced it. Both functions now call
+  `tensor::detail::requireSameGrid(a, b, ...)` and throw
+  `std::invalid_argument` on mismatch with a flat-index pointer in the
+  message. Eight regression tests in
+  `test/tensor_grid_mismatch_test.cpp` (three flavors of mismatch on
+  each entry point + happy-path regression + error-message-shape
+  check). New header
+  `include/gridcalc/tensor/detail/RequireSameGrid.hpp` with templated
+  `Field<T>` and `Grid`-only overloads.
+- **Contraction-ET binary nodes (`Plus`, `Minus`, `Mul`,
+  `SingleContract`, `DoubleContract`) now validate matching grids** at
+  construction time. Without the check, the periodic-wrap policy on
+  `Field::operator()` masks an OOB on the smaller-rhs case while still
+  silently mis-pairing cells. Constructors now call
+  `tensor::detail::requireSameGrid(_lhs.grid(), _rhs.grid(), ...)` and
+  throw on mismatch; nine regression tests added.
+- **`func::integrate(expr, tag)` is now genuinely fused.** The initial
+  Phase-15 implementation forwarded to
+  `func::integrate(tensor::expr::materialize(expr), tag)` --- it saved
+  the rank-2 intermediates but still allocated one `Field<double>` for
+  the scalar integrand and walked it twice. The new implementation
+  streams `expr.evalAt(i, j, k)` straight into a per-cell pairwise
+  recursion (or single-pass Neumaier loop for `Kahan`), with no scalar
+  temporary. Bit-identical to the materialize-then-reduce path on the
+  same grid (same recursion shape, same split point), so existing
+  `EXPECT_DOUBLE_EQ` regression checks still pass.
+
+### Documentation lint fix (review-found before merge)
+
+- Added `\brief` + `\since 0.15.0` Doxygen blocks to every
+  `value_type` member typedef on the ten ET node classes (`Leaf`,
+  `IdentityField`, `Scaled`, `Plus`, `Minus`, `Mul`, `Trace`, `Sym`,
+  `SingleContract`, `DoubleContract`). Doxygen `WARN_IF_UNDOCUMENTED`
+  was firing on these on the first PR-CI run.
+
 ### Test totals
 
-`clang-debug` 397 (prior 0.14.5) + 32 new = 429.
-`clang-debug-nofft` 254 (prior 0.14.5) + 32 new = 286 (none of the new
+`clang-debug` 397 (prior 0.14.5) + 49 new = 446.
+`clang-debug-nofft` 254 (prior 0.14.5) + 49 new = 303 (none of the new
 tests touch the FFT path).
 
 ## 0.14.5 — Fix: D-grid mismatch + CFL tightening on heterogeneous-D diffusion
