@@ -1,5 +1,6 @@
 /// \file
-/// \brief Periodic Cartesian-grid integration of a scalar `Field<double>`.
+/// \brief Periodic Cartesian-grid integration of a scalar `Field<double>`
+///        or a `double`-valued contraction-ET expression.
 ///
 /// Implements the periodic midpoint quadrature rule
 /// $I_h = h_x h_y h_z \sum_{i,j,k} f_{ijk}$, which on the equispaced periodic
@@ -7,14 +8,22 @@
 /// analytic periodic integrands. Two reduction strategies are exposed via
 /// tag dispatch: pairwise recursive summation (default) and Kahan/Neumaier
 /// compensated summation.
-/// \since 0.3.0
+///
+/// Phase 15 adds a fused overload accepting any contraction-ET node from
+/// `gridcalc/tensor/Expressions.hpp` whose `value_type` is `double`,
+/// avoiding `Field<core::Mat3d>` intermediates when reducing tensor
+/// expressions like the linear elastic energy
+/// $\int \tfrac12 \boldsymbol{\sigma}:\boldsymbol{\varepsilon}\,dV$.
+/// \since 0.3.0 (scalar `Field<double>` overloads); 0.15.0 (ET overload).
 
 #pragma once
 
 #include <cmath>
 #include <cstddef>
+#include <type_traits>
 
 #include <gridcalc/core/Field.hpp>
+#include <gridcalc/tensor/Expressions.hpp>
 
 namespace gridcalc::func {
 
@@ -117,6 +126,37 @@ inline double integrate(const core::Field<double>& field, Kahan tag) noexcept {
   (void)tag;
   return field.getGrid().getCellVolume() *
          detail::neumaierSum(field.data(), field.getSize());
+}
+
+/// \brief Returns $\int \mathrm{expr}\, dV$ for a `double`-valued contraction-ET expression.
+///
+/// Materializes the per-cell scalar integrand once into a temporary
+/// `core::Field<double>` and forwards to the matching scalar overload.
+/// The point of the overload is to **avoid** materializing rank-2
+/// intermediates (`Field<core::Mat3d>` for $\boldsymbol{\sigma}$,
+/// $\boldsymbol{\varepsilon}$, etc.) along the way: the expression's
+/// `evalAt(i, j, k)` evaluator pulls the pointwise scalar directly from
+/// the Mat3d arithmetic at each cell.
+///
+/// Equivalent in numerical output to
+/// `func::integrate(tensor::expr::materialize(expr), tag)`. The
+/// expression's `value_type` must be `double`, enforced via
+/// `std::enable_if`. Supported tags are `Pairwise` (default) and `Kahan`.
+/// \tparam E    A contraction-ET node type (`tensor::expr::is_expr_v<E>` must be `true`)
+///              with `value_type == double`.
+/// \tparam Tag  Reduction-strategy tag --- `Pairwise` or `Kahan`.
+/// \param expr  The scalar-valued expression to reduce.
+/// \param tag   Reduction-strategy tag (defaulted to `Pairwise{}`).
+/// \returns The discrete integral as a `double`.
+/// \since 0.15.0
+template <class E, class Tag = Pairwise,
+          std::enable_if_t<tensor::expr::is_expr_v<E> &&
+                               std::is_same_v<typename std::decay_t<E>::value_type, double>,
+                           int> = 0>
+inline double integrate(const E& expr, Tag tag = {}) {
+  static_assert(std::is_same_v<Tag, Pairwise> || std::is_same_v<Tag, Kahan>,
+                "func::integrate(expr): Tag must be func::Pairwise or func::Kahan");
+  return integrate(tensor::expr::materialize(expr), tag);
 }
 
 }  // namespace gridcalc::func
