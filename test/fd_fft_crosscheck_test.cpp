@@ -33,7 +33,12 @@ namespace gs = gridcalc::spectral;
 namespace {
 
 constexpr double kPi = 3.14159265358979323846;
-const std::vector<int> kSweepNs = {16, 32, 64, 128};
+// Sweep includes one odd-N grid (N=17) starting at 0.14.3, so every
+// FD<->FFT slope-band assertion is exercised on at least one odd-N
+// resolution. h=2*pi/17 ~ 0.37 keeps the truncation-analysis regime
+// intact (unlike N=5 at h~1.257, which would invalidate the slope
+// test -- see specs/2026-05-04-fix-stencil-aliasing-on-small-axes/).
+const std::vector<int> kSweepNs = {16, 17, 32, 64, 128};
 
 double maxAbs(const Field<double>& f) {
   double m = 0.0;

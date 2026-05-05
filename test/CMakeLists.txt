@@ -26,6 +26,7 @@ add_executable(gridcalc_tests
     stencil_axis_extent_test.cpp
     grid_equality_test.cpp
     integrator_grid_mismatch_test.cpp
+    spectral_wavenumbers_test.cpp
 )
 
 # Tests for the example helpers (`examples/common/...`) include them
