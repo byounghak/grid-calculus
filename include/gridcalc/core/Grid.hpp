@@ -71,6 +71,33 @@ class Grid {
   /// \since 0.1.0
   const Vec3d& getCellSize() const noexcept { return _cell_size; }
 
+  /// \brief Bit-exact equality on `(Nx, Ny, Nz)` and the three components
+  ///        of `cell_size`.
+  ///
+  /// Used by the time-integration machinery to validate that an RHS
+  /// callable returns a `Field` allocated against the same `Grid` as
+  /// the integrator's state. Comparison is bit-exact componentwise on
+  /// the cell-size doubles: there is no source of numerical drift on
+  /// `Grid` values in this codebase (they are constructed once per
+  /// simulation and passed by const reference), so any non-bit-exact
+  /// mismatch is by definition a different `Grid` object — exactly
+  /// the class of bug the equality check is meant to surface.
+  /// \param other  Grid to compare against.
+  /// \returns `true` iff every member matches bit-exact.
+  /// \since 0.14.2
+  bool operator==(const Grid& other) const noexcept {
+    return _Nx == other._Nx && _Ny == other._Ny && _Nz == other._Nz &&
+           _cell_size(0) == other._cell_size(0) &&
+           _cell_size(1) == other._cell_size(1) &&
+           _cell_size(2) == other._cell_size(2);
+  }
+
+  /// \brief Negation of `operator==`.
+  /// \param other  Grid to compare against.
+  /// \returns `!(*this == other)`.
+  /// \since 0.14.2
+  bool operator!=(const Grid& other) const noexcept { return !(*this == other); }
+
   /// \brief Returns the cell volume `hx * hy * hz`.
   /// \returns Cartesian volume of one grid cell.
   /// \since 0.1.0
