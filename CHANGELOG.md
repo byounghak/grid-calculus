@@ -19,6 +19,82 @@ project adheres to [Semantic Versioning](https://semver.org/).
 > (= today's Phase 15). Future blocks reference the post-renumber
 > numbering directly.
 
+## 0.14.5 — Fix: D-grid mismatch + CFL tightening on heterogeneous-D diffusion
+
+### Fixed
+
+- **D-grid mismatch on the FVM heterogeneous-D path.** The Phase 14
+  heterogeneous-D solver entry points (`fvm::cellLaplacian(psi, D)`
+  and `solve::diffuse(psi, D, ...)`) accepted `D` allocated on a
+  different `Grid` than `psi` and silently produced wrong fluxes via
+  flat-index misalignment. Same defensive-contract gap as PR #20
+  closed for `solve::integrate` / `axpyFresh`. Both entry points now
+  validate `D.getGrid() == psi.getGrid()` (bit-exact componentwise,
+  via the `solve::detail::requireSameGrid` helper from `0.14.2`) and
+  throw `std::invalid_argument` on mismatch with the offending entry
+  point named in the message.
+- **`D > 0` validation moved to the operator entry.**
+  `fvm::cellLaplacian(psi, D)` now scans `D` at function entry and
+  throws if any cell is not strictly positive (the harmonic-mean
+  face-D averaging is undefined otherwise). Direct callers of
+  `cellLaplacian` (any user code that wraps it as the RHS for their
+  own time stepper) get the loud failure they previously did not.
+  `solve::diffuse`'s pre-loop `D > 0` scan is dropped — the
+  contract is now owned by `cellLaplacian` per-call. The error
+  message names the first offending flat index.
+
+### Performance
+
+- **CFL bound tightened from `D_max` to `D_max_face`.** The
+  heterogeneous-D `solve::diffuse` previously used the spatial
+  maximum of `D` for the von-Neumann CFL bound. The cell-flux
+  operator uses **harmonic-mean face diffusivity**, which is
+  bounded above by `min(D_a, D_b)` — strictly tighter than `D_max`.
+  For high-contrast `D` (e.g., one cell at 100 surrounded by `D = 1`
+  cells), `D_max_face = max over face pairs of harmonicMean(D_a, D_b) ≈ 1.98`
+  vs `D_max = 100` — a ~50× larger admissible `dt`. Bit-identical
+  to the previous bound on uniform `D` (`harmonicMean(D, D) = D`)
+  and on smooth varying `D` (the existing acceptance tests pass
+  unchanged). `solve::diffuse`'s pre-loop pass now computes
+  `D_max_face` instead of `D_max`; the CFL helper signature is
+  unchanged. Documented in the Doxygen block on the heterogeneous-D
+  `solve::diffuse` overload.
+
+### Tests
+
+- New `test/fvm_grid_mismatch_test.cpp` (14 tests):
+  - Three flavors of D-grid mismatch (different total cell count,
+    same total / different per-axis extents, same shape /
+    different cell size) on each of `fvm::cellLaplacian` and
+    `solve::diffuse`.
+  - `D <= 0` throw test at `cellLaplacian` (zero and negative cell
+    cases) with a flat-index message; the `solve::diffuse`
+    counterpart confirms the error propagates correctly via
+    `cellLaplacian` on the first stage.
+  - Happy-path smoke for both entry points.
+  - **CFL tightening on high-contrast D**: `solve::diffuse` accepts
+    a `dt` that exceeds `0.5 / (D_max · Σ(1/h²))` but is well below
+    `0.5 / (D_max_face · Σ(1/h²))` — confirming the perf headroom.
+  - **Uniform-D regression**: bit-identical CFL boundary behavior
+    on uniform `D`.
+- Test totals: `clang-debug` is now 397 (383 prior + 14 new);
+  `clang-debug-nofft` is now 254 (240 prior + 14 new — the new
+  test file is FFT-independent, so the no-FFT build picks up all
+  14 new tests).
+
+### Internal
+
+- `include/gridcalc/fvm/CellLaplacian.hpp` gains an include of
+  `<gridcalc/solve/detail/RhsGridCheck.hpp>`. The cross-namespace
+  reuse of the `solve::detail::requireSameGrid` helper from
+  `fvm::*` follows the established pattern (PR #19's
+  `diff::detail::requireAxisExtent` is reused by
+  `fvm::cellLaplacian`).
+- `\since` tags on `fvm::cellLaplacian` and the heterogeneous-D
+  `solve::diffuse` overload note the precondition + CFL changes
+  (`\since 0.14.0 (function); 0.14.5 (D-grid + D > 0 preconditions)`
+  and `\since 0.14.0 (function); 0.14.5 (D-grid precondition + CFL tightening)`).
+
 ## 0.14.4 — Audit: `spectral::partial` Nyquist-zeroing path on odd-N grids
 
 ### Audited
