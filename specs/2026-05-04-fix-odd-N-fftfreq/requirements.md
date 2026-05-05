@@ -136,13 +136,17 @@ has no content at index `(N − 1) / 2`) on odd-`N` grids.
 ## Deferred questions
 
 - **Consumer-side Nyquist-zeroing audit (`spectral/Derivatives.hpp`).**
-  Tracked as the next follow-up: read the operator that consumes
-  `kyFull` / `kzFull`, verify whether the Nyquist-zero path is
-  conditional on `N % 2 == 0`, and patch if not. Likely a separate
-  `0.14.4` patch release.
+  **Resolved at `0.14.4` — see
+  [specs/2026-05-04-audit-spectral-nyquist-zeroing/](../2026-05-04-audit-spectral-nyquist-zeroing/).**
+  Audit conclusion: the consumer code was already correctly gated
+  on `N % 2 == 0`. No production-code change required; regression
+  tests in `test/spectral_partial_nyquist_test.cpp` lock the
+  parity-gate behavior so a future regression would be caught.
 - **User Guide / Developer Note "Nyquist mode" passages.** Phase 9's
   Developer Note chapter (Wavenumbers / Nyquist convention) may
   contain text that becomes inaccurate once the consumer-side audit
-  lands. Tracked with the audit follow-up.
+  lands. Still deferred to a Phase 9 doc-revisit pass; the audit
+  patch's Doxygen clarifications in `Derivatives.hpp` are not yet
+  reflected in the User Guide / Developer Note chapters.
 - **`Field` operator overloads, broader Field-equality work.** Out
   of scope; not motivated by this bug.
