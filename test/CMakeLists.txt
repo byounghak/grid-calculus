@@ -24,6 +24,8 @@ add_executable(gridcalc_tests
     fvm_diffusion_acceptance_test.cpp
     heterogeneous_diffusion_test.cpp
     stencil_axis_extent_test.cpp
+    grid_equality_test.cpp
+    integrator_grid_mismatch_test.cpp
 )
 
 # Tests for the example helpers (`examples/common/...`) include them
