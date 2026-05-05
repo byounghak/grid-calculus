@@ -30,6 +30,7 @@ add_executable(gridcalc_tests
     spectral_partial_nyquist_test.cpp
     fvm_grid_mismatch_test.cpp
     tensor_expressions_test.cpp
+    func_evaluate_vector_test.cpp
 )
 
 # Tests for the example helpers (`examples/common/...`) include them
