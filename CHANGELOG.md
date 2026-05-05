@@ -19,6 +19,70 @@ project adheres to [Semantic Versioning](https://semver.org/).
 > (= today's Phase 15). Future blocks reference the post-renumber
 > numbering directly.
 
+## 0.14.4 — Audit: `spectral::partial` Nyquist-zeroing path on odd-N grids
+
+### Audited
+
+- **`spectral::partial` and `spectral::gradient` Nyquist-zeroing.**
+  Discharges the deferred follow-up recorded by `0.14.3` (PR #21).
+  Audit conclusion: the consumer code in
+  [include/gridcalc/spectral/Derivatives.hpp](include/gridcalc/spectral/Derivatives.hpp)
+  was already correctly gated on `N_grid % 2 == 0` AND the per-axis
+  derivative count being odd. For odd `N_grid` the parity check
+  short-circuits and the multiplier is applied fully — the highest
+  positive harmonic at `(N - 1)/2` is preserved, not aliased.
+  `spectral::laplacian` and `spectral::biharmonic` skip the path
+  entirely (their per-axis derivative counts are even).
+
+  **No production-code change to the zeroing logic.** The audit was
+  surfaced because the 0.14.3 fix to `kyFull` / `kzFull` exposed
+  the *possibility* that the consumer might also have been wrong;
+  reading the code (and proving correctness via the new regression
+  tests) confirmed it was not.
+
+  The 0.14.3 FD–FFT cross-check at `N = 17` passes because the
+  manufactured solution `sin(x + y + z)` has Fourier content only
+  at index `1` — not at the highest harmonic at index `8`. So the
+  existing tests did not directly exercise "odd-`N` axis + odd
+  per-axis derivative count + content at `(N - 1)/2`". This patch
+  closes that test gap.
+
+### Tests
+
+- New `test/spectral_partial_nyquist_test.cpp` (36 parametrized tests):
+  - **First derivative on odd-`N`**: `spectral::partial<1, 0, 0>`,
+    `<0, 1, 0>`, `<0, 0, 1>` on `N ∈ {5, 7, 15, 31}` with input
+    `sin(k_max · a)` at the highest positive harmonic on axis `a`;
+    result matches `cos(k_max · a) · k_max` to round-off
+    (`< 1e-12` rel).
+  - **Third derivative on odd-`N`**: `spectral::partial<3, 0, 0>`,
+    `<0, 3, 0>`, `<0, 0, 3>` on the same grids; result matches
+    `−cos(k_max · a) · k_max^3`.
+  - **`spectral::gradient` on odd-`N`**: input with content at the
+    highest positive harmonic on each axis (three sub-tests); the
+    relevant Cartesian component matches the analytical first
+    derivative; the other two components are zero to round-off
+    (no spatial variation along their axes).
+- Test totals: `clang-debug` is now 383 (347 prior + 36 new);
+  `clang-debug-nofft` unchanged at 240 (the new test file is
+  `GRIDCALC_USE_FFT`-gated).
+- Phase 9 FD–FFT cross-check fixture is unchanged.
+
+### Documentation
+
+- `include/gridcalc/spectral/Derivatives.hpp` file-level Doxygen
+  block plus the per-function block on `spectral::partial` are
+  updated to make the parity-gated zeroing rule explicit: "Nyquist
+  mode is zeroed only when the axis extent is even AND the per-axis
+  derivative count is odd. Odd `N_a` has no Nyquist mode and the
+  highest positive harmonic at `(N_a − 1)/2` is preserved with its
+  full multiplier."
+- `specs/STATUS.md` "Decisions worth knowing" entry on the Nyquist-
+  zeroing convention updated to record the parity-gate detail and
+  the new regression test file as the audit gate.
+- The 0.14.3 spec dir's "Deferred questions" section is updated to
+  point at this audit's spec dir.
+
 ## 0.14.3 — Fix: off-by-one in spectral wavenumbers on odd-N grids
 
 ### Fixed
