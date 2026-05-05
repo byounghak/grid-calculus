@@ -33,6 +33,7 @@
 #include <gridcalc/core/EigenAliases.hpp>
 #include <gridcalc/core/Field.hpp>
 #include <gridcalc/core/Grid.hpp>
+#include <gridcalc/tensor/detail/RequireSameGrid.hpp>
 
 namespace gridcalc::tensor::expr {
 
@@ -66,6 +67,8 @@ inline constexpr bool is_expr_v = is_expr<std::remove_cv_t<std::remove_reference
 template <class T>
 class Leaf {
  public:
+  /// \brief Value the wrapped field stores at every cell.
+  /// \since 0.15.0
   using value_type = T;
 
   /// \brief Wraps a reference to the given field.
@@ -106,6 +109,8 @@ inline Leaf<T> field(const core::Field<T>& f) noexcept {
 /// \since 0.15.0
 class IdentityField {
  public:
+  /// \brief Value type produced at every cell --- always `core::Mat3d::Identity()`.
+  /// \since 0.15.0
   using value_type = core::Mat3d;
 
   /// \brief Constructs a broadcast identity over the given grid.
@@ -148,6 +153,8 @@ inline IdentityField identityField(const core::Grid& g) noexcept {
 template <class E>
 class Scaled {
  public:
+  /// \brief Value type forwarded from the inner expression.
+  /// \since 0.15.0
   using value_type = typename E::value_type;
 
   /// \brief Constructs `c * inner` (stored by value).
@@ -180,13 +187,22 @@ class Plus {
  public:
   static_assert(std::is_same_v<typename L::value_type, typename R::value_type>,
                 "tensor::expr::Plus: operands must have the same value_type");
+  /// \brief Shared value type of the two operands.
+  /// \since 0.15.0
   using value_type = typename L::value_type;
 
   /// \brief Constructs `lhs + rhs` (operands stored by value).
+  ///
+  /// Validates that the two operands share the same `core::Grid`;
+  /// throws `std::invalid_argument` on mismatch (added 0.15.0; before
+  /// that, the `evalAt` recursion silently mis-paired cells via the
+  /// periodic-wrap policy on `Field::operator()`).
+  /// \throws std::invalid_argument if `lhs.grid() != rhs.grid()`.
   /// \since 0.15.0
-  Plus(L lhs, R rhs) noexcept(std::is_nothrow_move_constructible_v<L> &&
-                              std::is_nothrow_move_constructible_v<R>)
-      : _lhs(std::move(lhs)), _rhs(std::move(rhs)) {}
+  Plus(L lhs, R rhs)
+      : _lhs(std::move(lhs)), _rhs(std::move(rhs)) {
+    detail::requireSameGrid(_lhs.grid(), _rhs.grid(), "tensor::expr::Plus");
+  }
 
   /// \brief Returns the (shared) grid of the operands.
   /// \since 0.15.0
@@ -220,13 +236,20 @@ class Mul {
                 "tensor::expr::Mul: lhs must have value_type == double");
   static_assert(std::is_same_v<typename R::value_type, double>,
                 "tensor::expr::Mul: rhs must have value_type == double");
+  /// \brief Always `double` --- scalar-only pointwise product.
+  /// \since 0.15.0
   using value_type = double;
 
   /// \brief Constructs `lhs * rhs` (operands stored by value).
+  ///
+  /// Validates that the two operands share the same `core::Grid`;
+  /// throws `std::invalid_argument` on mismatch (added 0.15.0).
+  /// \throws std::invalid_argument if `lhs.grid() != rhs.grid()`.
   /// \since 0.15.0
-  Mul(L lhs, R rhs) noexcept(std::is_nothrow_move_constructible_v<L> &&
-                             std::is_nothrow_move_constructible_v<R>)
-      : _lhs(std::move(lhs)), _rhs(std::move(rhs)) {}
+  Mul(L lhs, R rhs)
+      : _lhs(std::move(lhs)), _rhs(std::move(rhs)) {
+    detail::requireSameGrid(_lhs.grid(), _rhs.grid(), "tensor::expr::Mul");
+  }
 
   /// \brief Returns the (shared) grid of the operands.
   /// \since 0.15.0
@@ -253,13 +276,20 @@ class Minus {
  public:
   static_assert(std::is_same_v<typename L::value_type, typename R::value_type>,
                 "tensor::expr::Minus: operands must have the same value_type");
+  /// \brief Shared value type of the two operands.
+  /// \since 0.15.0
   using value_type = typename L::value_type;
 
   /// \brief Constructs `lhs - rhs` (operands stored by value).
+  ///
+  /// Validates that the two operands share the same `core::Grid`;
+  /// throws `std::invalid_argument` on mismatch (added 0.15.0).
+  /// \throws std::invalid_argument if `lhs.grid() != rhs.grid()`.
   /// \since 0.15.0
-  Minus(L lhs, R rhs) noexcept(std::is_nothrow_move_constructible_v<L> &&
-                               std::is_nothrow_move_constructible_v<R>)
-      : _lhs(std::move(lhs)), _rhs(std::move(rhs)) {}
+  Minus(L lhs, R rhs)
+      : _lhs(std::move(lhs)), _rhs(std::move(rhs)) {
+    detail::requireSameGrid(_lhs.grid(), _rhs.grid(), "tensor::expr::Minus");
+  }
 
   /// \brief Returns the (shared) grid of the operands.
   /// \since 0.15.0
@@ -294,6 +324,8 @@ class Trace {
  public:
   static_assert(std::is_same_v<typename E::value_type, core::Mat3d>,
                 "tensor::expr::Trace requires a Mat3d-valued expression");
+  /// \brief Always `double` --- scalar contracted from a `Mat3d`.
+  /// \since 0.15.0
   using value_type = double;
 
   /// \brief Constructs `trace(inner)` (inner stored by value).
@@ -334,6 +366,8 @@ class Sym {
  public:
   static_assert(std::is_same_v<typename E::value_type, core::Mat3d>,
                 "tensor::expr::Sym requires a Mat3d-valued expression");
+  /// \brief Always `core::Mat3d` --- the symmetric part of the inner expression.
+  /// \since 0.15.0
   using value_type = core::Mat3d;
 
   /// \brief Constructs `sym(inner)`.
@@ -380,13 +414,20 @@ class SingleContract {
                 "tensor::expr::SingleContract: lhs must have value_type == Mat3d");
   static_assert(std::is_same_v<typename R::value_type, core::Mat3d>,
                 "tensor::expr::SingleContract: rhs must have value_type == Mat3d");
+  /// \brief Always `core::Mat3d` --- pointwise matrix product of the operands.
+  /// \since 0.15.0
   using value_type = core::Mat3d;
 
   /// \brief Constructs `singleContract(lhs, rhs)`.
+  ///
+  /// Validates that the two operands share the same `core::Grid`;
+  /// throws `std::invalid_argument` on mismatch (added 0.15.0).
+  /// \throws std::invalid_argument if `lhs.grid() != rhs.grid()`.
   /// \since 0.15.0
-  SingleContract(L lhs, R rhs) noexcept(std::is_nothrow_move_constructible_v<L> &&
-                                        std::is_nothrow_move_constructible_v<R>)
-      : _lhs(std::move(lhs)), _rhs(std::move(rhs)) {}
+  SingleContract(L lhs, R rhs)
+      : _lhs(std::move(lhs)), _rhs(std::move(rhs)) {
+    detail::requireSameGrid(_lhs.grid(), _rhs.grid(), "tensor::expr::SingleContract");
+  }
 
   /// \brief Returns the (shared) grid of the operands.
   /// \since 0.15.0
@@ -428,13 +469,20 @@ class DoubleContract {
                 "tensor::expr::DoubleContract: lhs must have value_type == Mat3d");
   static_assert(std::is_same_v<typename R::value_type, core::Mat3d>,
                 "tensor::expr::DoubleContract: rhs must have value_type == Mat3d");
+  /// \brief Always `double` --- scalar full contraction `A : B`.
+  /// \since 0.15.0
   using value_type = double;
 
   /// \brief Constructs `doubleContract(lhs, rhs)`.
+  ///
+  /// Validates that the two operands share the same `core::Grid`;
+  /// throws `std::invalid_argument` on mismatch (added 0.15.0).
+  /// \throws std::invalid_argument if `lhs.grid() != rhs.grid()`.
   /// \since 0.15.0
-  DoubleContract(L lhs, R rhs) noexcept(std::is_nothrow_move_constructible_v<L> &&
-                                        std::is_nothrow_move_constructible_v<R>)
-      : _lhs(std::move(lhs)), _rhs(std::move(rhs)) {}
+  DoubleContract(L lhs, R rhs)
+      : _lhs(std::move(lhs)), _rhs(std::move(rhs)) {
+    detail::requireSameGrid(_lhs.grid(), _rhs.grid(), "tensor::expr::DoubleContract");
+  }
 
   /// \brief Returns the (shared) grid of the operands.
   /// \since 0.15.0

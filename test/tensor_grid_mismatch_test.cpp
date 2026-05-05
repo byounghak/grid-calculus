@@ -16,6 +16,7 @@
 #include <gridcalc/core/Field.hpp>
 #include <gridcalc/core/Grid.hpp>
 #include <gridcalc/tensor/Contraction.hpp>
+#include <gridcalc/tensor/Expressions.hpp>
 
 namespace {
 
@@ -24,6 +25,7 @@ using gridcalc::core::Grid;
 using gridcalc::core::Mat3d;
 using gridcalc::core::Vec3d;
 namespace tensor = gridcalc::tensor;
+namespace expr = gridcalc::tensor::expr;
 
 constexpr double kPi = 3.14159265358979323846;
 
@@ -101,6 +103,105 @@ TEST(TensorGridMismatchTest, MatchingGridsStillWork) {
 }
 
 // --- Error message includes context tag ----------------------------------
+
+// --- ET binary nodes (review fix #2) -------------------------------------
+// Without grid validation, Plus / Minus / Mul / SingleContract /
+// DoubleContract would silently mis-pair cells via the periodic-wrap
+// policy on `Field::operator()` and integrate the wrong physics.
+
+TEST(TensorGridMismatchTest, ETPlus_RejectsSmallerRhs) {
+    Field<Mat3d> a(makeStandardBox(8), Mat3d::Identity());
+    Field<Mat3d> b(makeStandardBox(4), Mat3d::Identity());
+    auto la = expr::field(a);
+    auto lb = expr::field(b);
+    EXPECT_THROW((void)(la + lb), std::invalid_argument);
+}
+
+TEST(TensorGridMismatchTest, ETMinus_RejectsSameSizeDifferentExtents) {
+    const Grid g_left = makeBox(8, 8, 8, 0.1, 0.1, 0.1);
+    const Grid g_right = makeBox(4, 16, 8, 0.1, 0.1, 0.1);
+    Field<Mat3d> a(g_left, Mat3d::Identity());
+    Field<Mat3d> b(g_right, Mat3d::Identity());
+    auto la = expr::field(a);
+    auto lb = expr::field(b);
+    EXPECT_THROW((void)(la - lb), std::invalid_argument);
+}
+
+TEST(TensorGridMismatchTest, ETMul_RejectsSameShapeDifferentSpacing) {
+    Field<Mat3d> a(makeBox(8, 8, 8, 0.1, 0.1, 0.1), Mat3d::Identity());
+    Field<Mat3d> b(makeBox(8, 8, 8, 0.2, 0.1, 0.1), Mat3d::Identity());
+    auto trA = expr::trace(expr::field(a));
+    auto trB = expr::trace(expr::field(b));
+    EXPECT_THROW((void)(trA * trB), std::invalid_argument);
+}
+
+TEST(TensorGridMismatchTest, ETSingleContract_RejectsSmallerRhs) {
+    Field<Mat3d> a(makeStandardBox(8), Mat3d::Identity());
+    Field<Mat3d> b(makeStandardBox(4), Mat3d::Identity());
+    auto la = expr::field(a);
+    auto lb = expr::field(b);
+    EXPECT_THROW((void)expr::singleContract(la, lb), std::invalid_argument);
+}
+
+TEST(TensorGridMismatchTest, ETDoubleContract_RejectsSameSizeDifferentExtents) {
+    const Grid g_left = makeBox(8, 8, 8, 0.1, 0.1, 0.1);
+    const Grid g_right = makeBox(4, 16, 8, 0.1, 0.1, 0.1);
+    Field<Mat3d> a(g_left, Mat3d::Identity());
+    Field<Mat3d> b(g_right, Mat3d::Identity());
+    auto la = expr::field(a);
+    auto lb = expr::field(b);
+    EXPECT_THROW((void)expr::doubleContract(la, lb), std::invalid_argument);
+}
+
+TEST(TensorGridMismatchTest, ETDoubleContract_RejectsSameShapeDifferentSpacing) {
+    Field<Mat3d> a(makeBox(8, 8, 8, 0.1, 0.1, 0.1), Mat3d::Identity());
+    Field<Mat3d> b(makeBox(8, 8, 8, 0.1, 0.2, 0.1), Mat3d::Identity());
+    auto la = expr::field(a);
+    auto lb = expr::field(b);
+    EXPECT_THROW((void)expr::doubleContract(la, lb), std::invalid_argument);
+}
+
+TEST(TensorGridMismatchTest, ETPlusWithIdentityField_RejectsMismatch) {
+    // IdentityField + Leaf<Mat3d>: both expose grid(); the binary node
+    // must validate them.
+    Field<Mat3d> a(makeStandardBox(8), Mat3d::Identity());
+    const Grid g_other = makeStandardBox(4);
+    auto leaf = expr::field(a);
+    auto idf = expr::identityField(g_other);
+    EXPECT_THROW((void)(leaf + idf), std::invalid_argument);
+}
+
+TEST(TensorGridMismatchTest, ETBinary_HappyPathStillWorks) {
+    Field<Mat3d> a(makeStandardBox(4), Mat3d::Identity());
+    Field<Mat3d> b(makeStandardBox(4), Mat3d::Identity());
+    auto la = expr::field(a);
+    auto lb = expr::field(b);
+    // Build all five binary nodes; they must all construct without throw.
+    EXPECT_NO_THROW({
+        auto sum = la + lb;
+        auto diff = la - lb;
+        auto sing = expr::singleContract(la, lb);
+        auto dub = expr::doubleContract(la, lb);
+        auto trA = expr::trace(la);
+        auto trB = expr::trace(lb);
+        auto prod = trA * trB;
+        (void)sum; (void)diff; (void)sing; (void)dub; (void)prod;
+    });
+}
+
+TEST(TensorGridMismatchTest, ETErrorMessageNamesNode) {
+    Field<Mat3d> a(makeStandardBox(8), Mat3d::Identity());
+    Field<Mat3d> b(makeStandardBox(4), Mat3d::Identity());
+    auto la = expr::field(a);
+    auto lb = expr::field(b);
+    try {
+        (void)expr::doubleContract(la, lb);
+        FAIL() << "Expected std::invalid_argument";
+    } catch (const std::invalid_argument& e) {
+        const std::string what = e.what();
+        EXPECT_NE(what.find("tensor::expr::DoubleContract"), std::string::npos);
+    }
+}
 
 TEST(TensorGridMismatchTest, ErrorMessageNamesEntryPoint) {
     Field<Mat3d> a(makeStandardBox(8), Mat3d::Identity());
