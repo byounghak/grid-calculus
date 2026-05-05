@@ -19,6 +19,81 @@ project adheres to [Semantic Versioning](https://semver.org/).
 > (= today's Phase 15). Future blocks reference the post-renumber
 > numbering directly.
 
+## 0.14.2 — Fix: silent Grid-mismatch on RHS return in time integrators
+
+### Fixed
+
+- **Silent `Grid` mismatch on RHS return in `solve::integrate(...)`.**
+  Both integrator overloads (`ExplicitEuler` and `RK4`) call the
+  user-supplied `rhs(psi)` callable each stage and then loop
+  `n = 0..psi.getSize() - 1` over the returned field's `data()`
+  pointer. The compile-time check
+  `std::is_invocable_r_v<Field<double>, Rhs&, const Field<double>&>`
+  only constrains the *return type*, not the runtime `Grid` carried by
+  the returned field. If the RHS allocates against a different `Grid`,
+  three failure modes silently occurred — out-of-bounds read on a
+  smaller field, layout drift across same-total-size / different-
+  per-axis-extent fields, and `1/h`-magnitude drift across same-shape /
+  different-cell-size fields. None tripped any existing test or warning.
+
+  Both integrators (and the shared `solve::detail::axpyFresh` stage
+  builder) now validate that `rhs(...).getGrid()` bit-matches
+  `psi.getGrid()` immediately after each call and throw
+  `std::invalid_argument` if not. Error messages name the offending
+  RK4 stage (`k1` / `k2` / `k3` / `k4`) or the ExplicitEuler `rhs(psi)`
+  call site, and print both the expected and actual
+  `(Nx, Ny, Nz, hx, hy, hz)` tuples. The bug was dormant in this
+  codebase — every RHS produced by the project's own `diff::*` /
+  `fvm::*` operators is grid-preserving by construction — but the
+  mission target ("production / industrial") includes user code that
+  may compose RHS callables holding captured grids; surfacing the
+  contract loudly catches the mistake at the integrator boundary
+  rather than as a corrupted state vector mid-run.
+
+### Added
+
+- **`gridcalc::core::Grid::operator==` and `operator!=`** —
+  bit-exact componentwise equality on `(Nx, Ny, Nz)` and the three
+  components of `cell_size`. Used by the new precondition; documented
+  as "bit-exact, by design" so a future reader does not relax it to a
+  tolerance-based comparison (this codebase has no source of `Grid`
+  numerical drift; any non-bit-exact mismatch is by definition a
+  different `Grid` object). Carries `\since 0.14.2`.
+
+### Tests
+
+- New `test/grid_equality_test.cpp` (10 tests): identical-grid
+  equality, reflexive / copy equality, per-axis extent mismatch
+  (Nx, Ny, Nz), per-component cell-size mismatch (hx, hy, hz), and
+  the bit-exact contract documented via `0.1 + 0.2 != 0.3`.
+- New `test/integrator_grid_mismatch_test.cpp` (14 tests): three
+  flavors of RHS-grid mismatch (different total cell count, same
+  total / different per-axis extents, same shape / different cell
+  size) on each of `RK4` and `ExplicitEuler`; direct coverage of
+  `detail::axpyFresh` for matched and mismatched grids; per-stage
+  label sweep on RK4 (`k1` / `k2` / `k3` / `k4`) verifying the helper
+  names the offending stage in its message; and happy-path smoke
+  tests confirming a `diff::laplacian`-based RHS integrates without
+  throwing through both integrator overloads.
+- Test totals: `clang-debug` is now 316 (292 prior + 24 new);
+  `clang-debug-nofft` is now 240 (216 prior + 24 new).
+
+### Internal
+
+- New header `include/gridcalc/solve/detail/RhsGridCheck.hpp` with
+  the free function
+  `gridcalc::solve::detail::requireSameGrid(expected, actual, context)`.
+  Lives under `solve/detail/` so it is excluded from the public-API
+  surface and the Phase 10 `\since`-tag lint regex; called from
+  `solve::detail::axpyFresh` and from each per-stage check inside
+  `integrate(... RK4)` / `integrate(... ExplicitEuler)`. Carries
+  Doxygen with `\since 0.14.2`.
+- `axpyFresh`, `integrate(... RK4)`, `integrate(... ExplicitEuler)`,
+  and the Phase 5 thin wrapper `explicitEuler` each gain a `\throws`
+  line on the existing Doxygen block; `\since` tags note the
+  precondition addition (e.g.,
+  `\since 0.6.0 (function); 0.14.2 (RHS-grid precondition).`).
+
 ## 0.14.1 — Fix: silent stencil aliasing on small periodic axes
 
 ### Fixed
