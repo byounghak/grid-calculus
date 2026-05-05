@@ -26,3 +26,14 @@ target_link_libraries(heterogeneous_diffusion PRIVATE
     gridcalc::gridcalc
     gridcalc_warnings
 )
+
+add_executable(elastic_energy elastic_energy.cpp)
+
+target_include_directories(elastic_energy PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+)
+
+target_link_libraries(elastic_energy PRIVATE
+    gridcalc::gridcalc
+    gridcalc_warnings
+)
