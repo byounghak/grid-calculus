@@ -20,6 +20,7 @@
 #include <gridcalc/diff/Laplacian.hpp>
 #include <gridcalc/fvm/CellLaplacian.hpp>
 #include <gridcalc/solve/Integrator.hpp>
+#include <gridcalc/solve/detail/RhsGridCheck.hpp>
 
 namespace gridcalc::solve {
 
@@ -122,11 +123,20 @@ inline void diffuse(core::Field<double>& psi,
 /// produce the same trajectory (verified by
 /// `HeterogeneousD_AgreesWithConstantDOnUniformField`).
 ///
-/// **CFL bound.** The von-Neumann criterion generalizes naturally:
-/// $D_{\max}\cdot dt\cdot\sum_a (1/h_a^2)\le \texttt{Tag::diffusionCFLLimit}$,
-/// where $D_{\max}$ is the spatial maximum of `D`. Stricter than the
-/// constant-D bound when `D` has high-conductivity spots; equal to it
-/// when `D` is uniform.
+/// **CFL bound.** The von-Neumann criterion uses the spatial maximum of
+/// the **harmonic-mean face diffusivity** rather than the spatial max
+/// of `D` itself:
+/// $D_{\max}^{\text{face}}\cdot dt\cdot\sum_a (1/h_a^2)\le \texttt{Tag::diffusionCFLLimit}$,
+/// where $D_{\max}^{\text{face}} = \max_{\text{face pairs}\,(a,b)}\,\tfrac{2 D_a D_b}{D_a + D_b}$.
+/// Since `harmonicMean(a, b) ≤ min(a, b) ≤ max(a, b)`, this is strictly
+/// `≤` the spatial maximum of `D` (`D_max`) — equal when `D` is
+/// uniform (`harmonicMean(D, D) = D`), strictly looser for varying `D`.
+/// For high-contrast fields (e.g., one cell at `D = 100` surrounded by
+/// `D = 1`), the harmonic mean strongly suppresses the maximum face-D
+/// (`harmonicMean(1, 100) ≈ 1.98`, not 100), so the admissible `dt`
+/// is ~50× larger than under the loose `D_max` bound. Bit-identical
+/// trajectories on uniform / smooth `D`; substantial perf headroom on
+/// high-contrast `D`.
 ///
 /// \tparam Integrator  Integrator tag (`ExplicitEuler` default, or `RK4`).
 /// \param psi      The state field; mutated in place.
@@ -138,13 +148,16 @@ inline void diffuse(core::Field<double>& psi,
 /// \param n_steps  Number of integrator steps to take. Must be `>= 0`.
 /// \param tag      Integrator selector (defaulted to `ExplicitEuler{}`).
 /// \throws std::invalid_argument on negative `dt` or `n_steps`, on
-///         non-positive `D` (when caught: a representative cell that
-///         violated the contract is named in the message), on CFL
-///         violation for the selected integrator, or on a grid too small
-///         for `fvm::cellLaplacian`'s stencil radius (propagated from
-///         the underlying operator; see
-///         `diff::detail::requireAxisExtent`).
-/// \since 0.14.0
+///         CFL violation for the selected integrator, on `D`'s grid
+///         not bit-matching `psi`'s (caught at this entry with a
+///         "solve::diffuse: D" context), on non-positive `D` at any
+///         cell (propagated from `fvm::cellLaplacian` on the first
+///         integrator stage; the message names the offending flat
+///         index), or on a grid too small for `fvm::cellLaplacian`'s
+///         stencil radius (propagated from the underlying operator;
+///         see `diff::detail::requireAxisExtent`).
+/// \since 0.14.0 (function); 0.14.5 (D-grid precondition + CFL
+///        tightening from `D_max` to `D_max_face`).
 template <class Integrator = ExplicitEuler>
 inline void diffuse(core::Field<double>& psi,
                     const core::Field<double>& D,
@@ -159,23 +172,41 @@ inline void diffuse(core::Field<double>& psi,
     throw std::invalid_argument("solve::diffuse: n_steps must be >= 0; got " +
                                 std::to_string(n_steps));
   }
+  detail::requireSameGrid(psi, D, "solve::diffuse: D");
 
-  // D must be strictly positive everywhere (harmonic-mean contract).
-  // Also compute D_max for the CFL bound in the same pass.
-  double D_max = 0.0;
-  const std::size_t n = D.getSize();
-  const double* pD = D.data();
-  for (std::size_t idx = 0; idx < n; ++idx) {
-    if (!(pD[idx] > 0.0)) {
-      throw std::invalid_argument(
-          "solve::diffuse(heterogeneous-D): D must be strictly positive at "
-          "every cell; first violation at flat index " +
-          std::to_string(idx) + " with D=" + std::to_string(pD[idx]));
+  // CFL bound uses the spatial max of the harmonic-mean face
+  // diffusivity, not the spatial max of D itself. For uniform D the
+  // two are identical (harmonicMean(D, D) = D); for varying D the
+  // face-mean is strictly smaller (harmonicMean(a, b) <= min(a, b)).
+  // High-contrast D fields therefore admit a substantially larger
+  // dt than under the loose D_max bound. D > 0 is validated by
+  // fvm::cellLaplacian on each integrator stage; if any cell is
+  // non-positive, the harmonic-mean computation here may produce
+  // garbage, but cellLaplacian throws on the first call and the
+  // CFL step's transient computation never affects the user.
+  double D_max_face = 0.0;
+  const auto& grid = psi.getGrid();
+  const int Nx = grid.getNx();
+  const int Ny = grid.getNy();
+  const int Nz = grid.getNz();
+  for (int k = 0; k < Nz; ++k) {
+    const int kp = (k + 1) % Nz;
+    for (int j = 0; j < Ny; ++j) {
+      const int jp = (j + 1) % Ny;
+      for (int i = 0; i < Nx; ++i) {
+        const int ip = (i + 1) % Nx;
+        const double D_c = D(i, j, k);
+        const double face_x = fvm::detail::harmonicMean(D_c, D(ip, j, k));
+        const double face_y = fvm::detail::harmonicMean(D_c, D(i, jp, k));
+        const double face_z = fvm::detail::harmonicMean(D_c, D(i, j, kp));
+        if (face_x > D_max_face) D_max_face = face_x;
+        if (face_y > D_max_face) D_max_face = face_y;
+        if (face_z > D_max_face) D_max_face = face_z;
+      }
     }
-    if (pD[idx] > D_max) D_max = pD[idx];
   }
 
-  detail::checkDiffusionCFL<Integrator>(psi.getGrid(), D_max, dt);
+  detail::checkDiffusionCFL<Integrator>(grid, D_max_face, dt);
   integrate(
       psi,
       [&D](const core::Field<double>& f) { return fvm::cellLaplacian(f, D); },
