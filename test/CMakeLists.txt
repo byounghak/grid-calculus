@@ -32,6 +32,7 @@ add_executable(gridcalc_tests
     tensor_expressions_test.cpp
     func_evaluate_vector_test.cpp
     elastic_energy_test.cpp
+    elastic_energy_demo_test.cpp
 )
 
 # Tests for the example helpers (`examples/common/...`) include them
