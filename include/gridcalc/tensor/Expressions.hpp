@@ -206,6 +206,46 @@ class Plus {
 template <class L, class R>
 struct is_expr<Plus<L, R>> : std::true_type {};
 
+/// \brief Pointwise multiplication of two `double`-valued expressions.
+///
+/// Restricted to scalar (`double`) operands by `static_assert` --- mixing
+/// rank-2 operands would be ambiguous between the matrix product
+/// (`singleContract`) and the full contraction (`doubleContract`); the
+/// dedicated factories disambiguate at the call site.
+/// \since 0.15.0
+template <class L, class R>
+class Mul {
+ public:
+  static_assert(std::is_same_v<typename L::value_type, double>,
+                "tensor::expr::Mul: lhs must have value_type == double");
+  static_assert(std::is_same_v<typename R::value_type, double>,
+                "tensor::expr::Mul: rhs must have value_type == double");
+  using value_type = double;
+
+  /// \brief Constructs `lhs * rhs` (operands stored by value).
+  /// \since 0.15.0
+  Mul(L lhs, R rhs) noexcept(std::is_nothrow_move_constructible_v<L> &&
+                             std::is_nothrow_move_constructible_v<R>)
+      : _lhs(std::move(lhs)), _rhs(std::move(rhs)) {}
+
+  /// \brief Returns the (shared) grid of the operands.
+  /// \since 0.15.0
+  const core::Grid& grid() const noexcept { return _lhs.grid(); }
+
+  /// \brief Returns `lhs.evalAt(...) * rhs.evalAt(...)`.
+  /// \since 0.15.0
+  double evalAt(int i, int j, int k) const noexcept {
+    return _lhs.evalAt(i, j, k) * _rhs.evalAt(i, j, k);
+  }
+
+ private:
+  L _lhs;
+  R _rhs;
+};
+
+template <class L, class R>
+struct is_expr<Mul<L, R>> : std::true_type {};
+
 /// \brief Pointwise difference of two same-`value_type` expressions.
 /// \since 0.15.0
 template <class L, class R>
@@ -470,6 +510,21 @@ inline auto operator+(L&& l, R&& r) {
 template <class L, class R, std::enable_if_t<is_expr_v<L> && is_expr_v<R>, int> = 0>
 inline auto operator-(L&& l, R&& r) {
   return Minus<std::decay_t<L>, std::decay_t<R>>{std::forward<L>(l), std::forward<R>(r)};
+}
+
+/// \brief Pointwise multiplication of two `double`-valued expressions.
+///
+/// `Mat3d`-valued operands are rejected by `static_assert` inside `Mul`
+/// to keep the matrix-product / full-contraction choice explicit at the
+/// call site (`singleContract` vs. `doubleContract`).
+/// \since 0.15.0
+template <class L, class R,
+          std::enable_if_t<is_expr_v<L> && is_expr_v<R> &&
+                               std::is_same_v<typename std::decay_t<L>::value_type, double> &&
+                               std::is_same_v<typename std::decay_t<R>::value_type, double>,
+                           int> = 0>
+inline auto operator*(L&& l, R&& r) {
+  return Mul<std::decay_t<L>, std::decay_t<R>>{std::forward<L>(l), std::forward<R>(r)};
 }
 
 // ---------------------------------------------------------------------------
