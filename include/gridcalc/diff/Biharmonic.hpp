@@ -19,6 +19,7 @@
 #include <cstddef>
 
 #include <gridcalc/core/Field.hpp>
+#include <gridcalc/diff/detail/PreconditionAxisExtent.hpp>
 #include <gridcalc/stencil/CentralDifference.hpp>
 #include <gridcalc/stencil/FourthDerivative.hpp>
 
@@ -37,13 +38,23 @@ namespace gridcalc::diff {
 /// \tparam Order  Accuracy order (`2` default, `4` available).
 /// \param psi     Input scalar field.
 /// \returns A new `Field<double>` holding $\nabla^4 \psi$.
-/// \since 0.8.0
+/// \throws std::invalid_argument if any axis of `psi`'s grid has extent
+///         `N < 2 * max(S4::radius, S2::radius) + 1` (each axis is read
+///         at the larger of the two stencil radii — the single-axis
+///         fourth-derivative term reaches `S4::radius`, the mixed
+///         (2, 2) cross terms reach `S2::radius`). See
+///         `diff::detail::requireAxisExtent`.
+/// \since 0.8.0 (function); 0.14.1 (precondition).
 template <int Order = 2>
 inline core::Field<double> biharmonic(const core::Field<double>& psi) {
   using S2 = stencil::Coefficients<Order>;
   using S4 = stencil::FourthDerivative<Order>;
+  constexpr int max_radius = (S4::radius > S2::radius) ? S4::radius : S2::radius;
 
   const auto& grid = psi.getGrid();
+  detail::requireAxisExtent("x", grid.getNx(), max_radius);
+  detail::requireAxisExtent("y", grid.getNy(), max_radius);
+  detail::requireAxisExtent("z", grid.getNz(), max_radius);
   const auto& h = grid.getCellSize();
   const double inv_hx2 = 1.0 / (h(0) * h(0));
   const double inv_hy2 = 1.0 / (h(1) * h(1));

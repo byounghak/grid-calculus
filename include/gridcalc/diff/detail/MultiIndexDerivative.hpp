@@ -15,6 +15,7 @@
 #include <cstddef>
 
 #include <gridcalc/core/Field.hpp>
+#include <gridcalc/diff/detail/PreconditionAxisExtent.hpp>
 #include <gridcalc/stencil/CentralDifference.hpp>
 #include <gridcalc/stencil/FirstDerivative.hpp>
 #include <gridcalc/stencil/FourthDerivative.hpp>
@@ -86,7 +87,12 @@ struct AxisStencil<4, Order> : stencil::FourthDerivative<Order> {};
 /// \param psi     Input scalar field.
 /// \returns A new `Field<double>` holding the requested partial at every
 ///          grid point.
-/// \since 0.8.0
+/// \throws std::invalid_argument if any axis of `psi`'s grid with a
+///         non-zero per-axis derivative count has extent
+///         `N < 2 * AxisStencil<N_a, Order>::radius + 1`. Axes with
+///         per-axis derivative count `0` accept any positive `N` (their
+///         stencil radius is `0`). See `diff::detail::requireAxisExtent`.
+/// \since 0.8.0 (function); 0.14.1 (precondition).
 template <int Nx, int Ny, int Nz, int Order>
 inline core::Field<double> mixedDerivative(const core::Field<double>& psi) {
   using Sx = AxisStencil<Nx, Order>;
@@ -94,6 +100,9 @@ inline core::Field<double> mixedDerivative(const core::Field<double>& psi) {
   using Sz = AxisStencil<Nz, Order>;
 
   const auto& grid = psi.getGrid();
+  requireAxisExtent("x", grid.getNx(), Sx::radius);
+  requireAxisExtent("y", grid.getNy(), Sy::radius);
+  requireAxisExtent("z", grid.getNz(), Sz::radius);
   const auto& h = grid.getCellSize();
 
   double scale = 1.0;

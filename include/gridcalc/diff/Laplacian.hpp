@@ -12,6 +12,7 @@
 #include <cstddef>
 
 #include <gridcalc/core/Field.hpp>
+#include <gridcalc/diff/detail/PreconditionAxisExtent.hpp>
 #include <gridcalc/stencil/CentralDifference.hpp>
 
 namespace gridcalc::diff {
@@ -35,11 +36,18 @@ namespace gridcalc::diff {
 ///                (Phase 7) are specialized.
 /// \param field   Input scalar field.
 /// \returns A new `Field<double>` holding $\nabla^2 f$ at every grid point.
-/// \since 0.1.0 (function); 0.7.0 (`Order` parameter).
+/// \throws std::invalid_argument if any axis of `field`'s grid has
+///         extent `N < 2 * Coefficients<Order>::radius + 1` (the periodic
+///         wrap would otherwise alias offsets and silently degrade the
+///         stencil). See `diff::detail::requireAxisExtent`.
+/// \since 0.1.0 (function); 0.7.0 (`Order` parameter); 0.14.1 (precondition).
 template <int Order = 2>
 inline core::Field<double> laplacian(const core::Field<double>& field) {
   using Coeffs = stencil::Coefficients<Order>;
   const auto& grid = field.getGrid();
+  detail::requireAxisExtent("x", grid.getNx(), Coeffs::radius);
+  detail::requireAxisExtent("y", grid.getNy(), Coeffs::radius);
+  detail::requireAxisExtent("z", grid.getNz(), Coeffs::radius);
   const auto& h = grid.getCellSize();
   const double inv_hx2 = 1.0 / (h(0) * h(0));
   const double inv_hy2 = 1.0 / (h(1) * h(1));
