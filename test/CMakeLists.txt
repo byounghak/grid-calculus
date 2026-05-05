@@ -23,6 +23,7 @@ add_executable(gridcalc_tests
     fvm_cell_laplacian_test.cpp
     fvm_diffusion_acceptance_test.cpp
     heterogeneous_diffusion_test.cpp
+    stencil_axis_extent_test.cpp
 )
 
 # Tests for the example helpers (`examples/common/...`) include them
