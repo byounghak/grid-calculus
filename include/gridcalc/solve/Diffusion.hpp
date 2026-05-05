@@ -80,7 +80,10 @@ inline void checkDiffusionCFL(const core::Grid& grid, double D, double dt) {
 /// \param n_steps  Number of integrator steps to take. Must be `>= 0`.
 /// \param tag      Integrator selector (defaulted to `ExplicitEuler{}`).
 /// \throws std::invalid_argument on negative `D`, `dt`, or `n_steps`,
-///         or on CFL violation for the selected integrator.
+///         on CFL violation for the selected integrator, or on a grid
+///         too small for `diff::laplacian`'s stencil radius (propagated
+///         from the underlying operator; see
+///         `diff::detail::requireAxisExtent`).
 /// \since 0.5.0
 template <class Integrator = ExplicitEuler>
 inline void diffuse(core::Field<double>& psi,
@@ -136,8 +139,11 @@ inline void diffuse(core::Field<double>& psi,
 /// \param tag      Integrator selector (defaulted to `ExplicitEuler{}`).
 /// \throws std::invalid_argument on negative `dt` or `n_steps`, on
 ///         non-positive `D` (when caught: a representative cell that
-///         violated the contract is named in the message), or on CFL
-///         violation for the selected integrator.
+///         violated the contract is named in the message), on CFL
+///         violation for the selected integrator, or on a grid too small
+///         for `fvm::cellLaplacian`'s stencil radius (propagated from
+///         the underlying operator; see
+///         `diff::detail::requireAxisExtent`).
 /// \since 0.14.0
 template <class Integrator = ExplicitEuler>
 inline void diffuse(core::Field<double>& psi,
