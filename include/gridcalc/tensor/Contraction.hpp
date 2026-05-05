@@ -15,6 +15,7 @@
 
 #include <gridcalc/core/EigenAliases.hpp>
 #include <gridcalc/core/Field.hpp>
+#include <gridcalc/tensor/detail/RequireSameGrid.hpp>
 
 namespace gridcalc::tensor {
 
@@ -46,13 +47,17 @@ inline core::Field<double> trace(const core::Field<core::Mat3d>& mfield) {
 /// At each grid point: `(A · B)(i, j) = A(i, k) B(k, j)` (sum over `k`),
 /// i.e., `out(i, j, k) = a(i, j, k) * b(i, j, k)` interpreting the `*`
 /// as `Eigen::Matrix3d::operator*`. The two inputs must share the same
-/// `Grid` (extents and cell size); behavior is undefined if they do not.
+/// `Grid` (extents and cell size); a mismatch throws
+/// `std::invalid_argument` (added 0.15.0; before that the loop was a
+/// silent flat-index OOB / mis-pairing on non-matching grids).
 /// \param a  Left operand.
 /// \param b  Right operand.
 /// \returns A new `Field<Mat3d>` holding the per-point matrix product.
-/// \since 0.13.0
+/// \throws std::invalid_argument if `a.getGrid() != b.getGrid()`.
+/// \since 0.13.0 (function); 0.15.0 (Grid-equality precondition).
 inline core::Field<core::Mat3d> singleContract(const core::Field<core::Mat3d>& a,
                                                const core::Field<core::Mat3d>& b) {
+  detail::requireSameGrid(a, b, "tensor::singleContract");
   const auto& grid = a.getGrid();
   core::Field<core::Mat3d> result(grid);
   const std::size_t n = grid.getSize();
@@ -71,15 +76,18 @@ inline core::Field<core::Mat3d> singleContract(const core::Field<core::Mat3d>& a
 /// At each grid point: `A : B = A(i, j) B(i, j)` (sum over both
 /// indices), equivalently `(A.array() * B.array()).sum()` or
 /// `trace(Aᵀ B)`. The standard pairing for elastic energy density
-/// `½ σ : ε` and similar rank-2 / rank-2 contractions; Phase 14's
-/// `func::evaluate` over tensor fields will route through this.
-/// The two inputs must share the same `Grid`.
+/// `½ σ : ε` and similar rank-2 / rank-2 contractions. The two inputs
+/// must share the same `Grid`; a mismatch throws
+/// `std::invalid_argument` (added 0.15.0; before that the loop was a
+/// silent flat-index OOB / mis-pairing on non-matching grids).
 /// \param a  Left operand.
 /// \param b  Right operand.
 /// \returns A new `Field<double>` holding the per-point full contraction.
-/// \since 0.13.0
+/// \throws std::invalid_argument if `a.getGrid() != b.getGrid()`.
+/// \since 0.13.0 (function); 0.15.0 (Grid-equality precondition).
 inline core::Field<double> doubleContract(const core::Field<core::Mat3d>& a,
                                           const core::Field<core::Mat3d>& b) {
+  detail::requireSameGrid(a, b, "tensor::doubleContract");
   const auto& grid = a.getGrid();
   core::Field<double> result(grid);
   const std::size_t n = grid.getSize();
