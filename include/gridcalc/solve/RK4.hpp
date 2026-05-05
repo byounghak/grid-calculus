@@ -16,6 +16,7 @@
 #include <type_traits>
 
 #include <gridcalc/core/Field.hpp>
+#include <gridcalc/solve/detail/RhsGridCheck.hpp>
 
 namespace gridcalc::solve {
 
@@ -37,12 +38,20 @@ namespace detail {
 
 /// \brief Returns `a + scale * b` element-wise as a fresh Field.
 ///
-/// Used to build RK4's intermediate stage inputs. `a` and `b` must have
-/// the same shape.
-/// \since 0.6.0
+/// Used to build RK4's intermediate stage inputs. `a` and `b` must
+/// carry the **same `Grid`** — bit-exact equality on `(Nx, Ny, Nz)`
+/// and per-axis cell sizes. The flat-index loop over `pa[n] + scale * pb[n]`
+/// would otherwise silently mix cells from misaligned grids (or read
+/// past the end of the smaller field's storage).
+/// \param a      Base field; defines the output grid.
+/// \param scale  Scalar multiplier on `b`.
+/// \param b      Field to add; must share `a`'s grid.
+/// \throws std::invalid_argument if `a.getGrid() != b.getGrid()`.
+/// \since 0.6.0 (function); 0.14.2 (Grid-equality precondition).
 inline core::Field<double> axpyFresh(const core::Field<double>& a,
                                      double scale,
                                      const core::Field<double>& b) {
+  requireSameGrid(a, b, "solve::detail::axpyFresh");
   core::Field<double> out(a.getGrid());
   const std::size_t N = out.getSize();
   const double* pa = a.data();
@@ -81,8 +90,12 @@ inline core::Field<double> axpyFresh(const core::Field<double>& a,
 /// \param dt      Time step. Must be `>= 0`.
 /// \param n_steps Number of steps to advance. Must be `>= 0`.
 /// \param tag     Empty `RK4{}` tag for dispatch.
-/// \throws std::invalid_argument if `dt < 0` or `n_steps < 0`.
-/// \since 0.6.0
+/// \throws std::invalid_argument if `dt < 0`, `n_steps < 0`, or any
+///         per-stage `rhs(...)` call returns a `Field` allocated on a
+///         different `Grid` than `psi` (the integrator's flat-index
+///         accumulation requires `psi`-grid-preserving RHS values; see
+///         `solve::detail::requireSameGrid`).
+/// \since 0.6.0 (function); 0.14.2 (RHS-grid precondition).
 template <class Rhs>
 inline void integrate(core::Field<double>& psi,
                       Rhs&& rhs,
@@ -114,15 +127,19 @@ inline void integrate(core::Field<double>& psi,
   for (int step = 0; step < n_steps; ++step) {
     // k1 at psi
     core::Field<double> k1 = rhs(static_cast<const core::Field<double>&>(psi));
+    detail::requireSameGrid(psi, k1, "solve::integrate(... RK4): k1");
     // k2 at psi + (dt/2) k1
     core::Field<double> y2 = detail::axpyFresh(psi, half_dt, k1);
     core::Field<double> k2 = rhs(static_cast<const core::Field<double>&>(y2));
+    detail::requireSameGrid(psi, k2, "solve::integrate(... RK4): k2");
     // k3 at psi + (dt/2) k2
     core::Field<double> y3 = detail::axpyFresh(psi, half_dt, k2);
     core::Field<double> k3 = rhs(static_cast<const core::Field<double>&>(y3));
+    detail::requireSameGrid(psi, k3, "solve::integrate(... RK4): k3");
     // k4 at psi + dt k3
     core::Field<double> y4 = detail::axpyFresh(psi, dt, k3);
     core::Field<double> k4 = rhs(static_cast<const core::Field<double>&>(y4));
+    detail::requireSameGrid(psi, k4, "solve::integrate(... RK4): k4");
 
     // psi += (dt/6) k1 + (dt/3) k2 + (dt/3) k3 + (dt/6) k4
     double* p = psi.data();

@@ -24,6 +24,7 @@
 #include <type_traits>
 
 #include <gridcalc/core/Field.hpp>
+#include <gridcalc/solve/detail/RhsGridCheck.hpp>
 
 namespace gridcalc::solve {
 
@@ -69,8 +70,12 @@ struct deferred_false : std::false_type {};
 /// \param dt      Time step. Must be `>= 0`.
 /// \param n_steps Number of steps to advance. Must be `>= 0`.
 /// \param tag     Empty `ExplicitEuler{}` tag for dispatch.
-/// \throws std::invalid_argument if `dt < 0` or `n_steps < 0`.
-/// \since 0.6.0
+/// \throws std::invalid_argument if `dt < 0`, `n_steps < 0`, or any
+///         `rhs(psi)` call returns a `Field` allocated on a different
+///         `Grid` than `psi` (the integrator's flat-index accumulation
+///         requires `psi`-grid-preserving RHS values; see
+///         `solve::detail::requireSameGrid`).
+/// \since 0.6.0 (function); 0.14.2 (RHS-grid precondition).
 template <class Rhs>
 inline void integrate(core::Field<double>& psi,
                       Rhs&& rhs,
@@ -97,6 +102,7 @@ inline void integrate(core::Field<double>& psi,
   const std::size_t N = psi.getSize();
   for (int step = 0; step < n_steps; ++step) {
     core::Field<double> tmp = rhs(static_cast<const core::Field<double>&>(psi));
+    detail::requireSameGrid(psi, tmp, "solve::integrate(... ExplicitEuler): rhs(psi)");
     double* p = psi.data();
     const double* r = tmp.data();
     for (std::size_t n = 0; n < N; ++n) {
@@ -117,7 +123,8 @@ inline void integrate(core::Field<double>& psi,
 /// \param rhs    See `integrate(...)`.
 /// \param dt     See `integrate(...)`.
 /// \param n_steps See `integrate(...)`.
-/// \throws std::invalid_argument as for `integrate(... ExplicitEuler{})`.
+/// \throws std::invalid_argument as for `integrate(... ExplicitEuler{})`,
+///         including the 0.14.2 RHS-grid precondition.
 /// \since 0.5.0
 template <class Rhs>
 inline void explicitEuler(core::Field<double>& psi,
