@@ -19,6 +19,91 @@ project adheres to [Semantic Versioning](https://semver.org/).
 > (= today's Phase 15). Future blocks reference the post-renumber
 > numbering directly.
 
+## 0.14.1 — Fix: silent stencil aliasing on small periodic axes
+
+### Fixed
+
+- **Silent stencil aliasing on small periodic axes.** Centered
+  finite-difference stencils of radius `r` (Phase 7's
+  `Coefficients<4>`, `FirstDerivative<4>`; Phase 8's
+  `ThirdDerivative<{2, 4}>`, `FourthDerivative<{2, 4}>`) reach offsets
+  `[-r, r]` along each active axis. On a periodic axis with extent
+  `2 <= N <= 2 * r`, two or more offsets aliased to the same grid
+  sample after the periodic wrap; the aliased weights summed at the
+  duplicated index, silently degrading the operator away from its
+  tabulated truncation order. The Phase 9 FD–FFT cross-check fixture's
+  grid sweep `{16, 32, 64, 128}` was well above every threshold and
+  did not catch this. Concrete failure case from the bug report:
+  `diff::laplacian<4>(field)` on a grid with `Nx = 4` collapses the
+  five-point `O(h^4)` stencil to a four-point operator with
+  `{4/3, -8/3, 4/3, -1/6}` weights — published convergence order no
+  longer holds.
+
+  Every operator in `gridcalc::diff::*` and `gridcalc::fvm::*` that
+  reads off-axis samples through the periodic index policy now
+  validates each axis's extent at the call entry and throws
+  `std::invalid_argument` if any axis falls in the partial-alias range
+  `[2, 2 * radius]`. Affected operators: `diff::laplacian<{2, 4}>`,
+  `diff::gradient<{2, 4}>` (scalar and Phase 13 vector overload),
+  `diff::divergence<{2, 4}>` (scalar-output and Phase 13 tensor-output
+  overload), `diff::biharmonic<{2, 4}>`, every Phase 8 d-prefix mixed
+  partial at both orders (via the shared `mixedDerivative` site), and
+  `fvm::cellLaplacian` (defense-in-depth — radius `1` at Phase 14, so
+  currently a no-op for any `N >= 3`; the check is forward-compatible
+  with any future higher-radius FVM variant).
+
+  **Degenerate-axis carve-out.** `N = 1` is accepted regardless of
+  stencil radius. At `N = 1` every offset wraps to index `0`, all
+  reads return the single cell value, and the centered FD weight
+  tables in this codebase sum to zero by construction (the n-th
+  derivative of a constant is zero); the aliased result is therefore
+  exactly `0` — the correct value for a degenerate single-cell
+  periodic axis with no spatial variation. Practical consequence: the
+  existing 1D-flavored `Grid g(4, 1, 1, ...)` test pattern used by
+  Phase 14's FVM unit tests (and by user code with degenerate axes)
+  continues to work without modification.
+
+  Error messages name the offending axis (`x` / `y` / `z`), its `N`,
+  the stencil's radius, and the required minimum.
+
+### Tests
+
+- New `test/stencil_axis_extent_test.cpp` (34 tests):
+  - **Throw tests** at `N = 2 * radius` for each radius tier
+    (`1, 2, 3`) across every affected operator.
+  - **Per-axis label sweep** verifying the helper reports the right
+    axis (`x`, `y`, `z`) in its error message.
+  - **Smallest-valid-N boundary tests** at `N = 2 * radius + 1` for
+    every Phase 7 / Phase 8 / Phase 13 / Phase 14 operator, asserting
+    no-throw and finite output. The Phase 9 FD–FFT cross-check
+    fixture's slope sweep is left at `{16, 32, 64, 128}` — extending
+    it to `N = 5` is unsound (the truncation-error analysis breaks
+    down at `h ≈ 1.257`); the no-throw + finiteness gate captures the
+    actual silent-degradation failure mode without making slope
+    claims at degenerate resolutions.
+  - **Degenerate-axis carve-out tests** verifying that `N = 1` is
+    accepted across `laplacian<4>`, `gradient<4>`, `biharmonic<4>`,
+    `fvm::cellLaplacian`.
+  - **Inactive-axis carve-out test** through the Phase 8 mixed-partial
+    path (`mixedDerivative<3, 0, 0, 2>` on a grid with `Ny = Nz = 1`),
+    confirming an axis with per-axis derivative count `0` accepts any
+    positive `N`.
+- Test totals: `clang-debug` is now 292 (258 prior + 34 new);
+  `clang-debug-nofft` is now 216 (182 prior + 34 new).
+- Phase 9 FD–FFT cross-check fixture is unchanged.
+
+### Internal
+
+- New header `include/gridcalc/diff/detail/PreconditionAxisExtent.hpp`
+  with the free function
+  `gridcalc::diff::detail::requireAxisExtent(axis_label, N, radius)`.
+  Lives under `detail/` so it is excluded from the public-API surface
+  and the Phase 10 `\since`-tag lint regex; reused by
+  `fvm::cellLaplacian` via include. Carries Doxygen with `\since 0.14.1`.
+- Each touched operator's existing Doxygen block gains a `\throws`
+  line referencing the precondition; `\since` tags note the precondition
+  addition (e.g., `\since 0.1.0 (function); 0.7.0 (Order parameter); 0.14.1 (precondition).`).
+
 ## 0.14.0 — Phase 14: Finite volume method (FVM)
 
 ### Added
