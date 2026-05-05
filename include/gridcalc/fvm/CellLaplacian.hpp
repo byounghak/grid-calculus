@@ -27,10 +27,13 @@
 #pragma once
 
 #include <cstddef>
+#include <stdexcept>
+#include <string>
 
 #include <gridcalc/core/Field.hpp>
 #include <gridcalc/core/Grid.hpp>
 #include <gridcalc/diff/detail/PreconditionAxisExtent.hpp>
+#include <gridcalc/solve/detail/RhsGridCheck.hpp>
 
 namespace gridcalc::fvm {
 
@@ -69,15 +72,22 @@ inline double harmonicMean(double a, double b) noexcept {
 /// \param psi  Input scalar field.
 /// \param D    Diffusivity field on the same `Grid` as `psi`. **Must be
 ///             strictly positive** at every cell; the harmonic mean is
-///             undefined otherwise. Behavior is undefined if either
-///             contract is violated.
+///             undefined otherwise. Both contracts are validated at the
+///             operator entry (`std::invalid_argument` on violation).
 /// \returns A new `Field<double>` holding $\nabla\cdot(D\,\nabla\psi)$.
 /// \throws std::invalid_argument if any axis of `psi`'s grid has extent
 ///         `N < 3` (the Phase 14 face-flux stencil has radius `1`; the
 ///         check is uniform with the `diff::*` operator-entry contract
 ///         and forward-compatible with any future higher-radius FVM
-///         variant). See `diff::detail::requireAxisExtent`.
-/// \since 0.14.0 (function); 0.14.1 (precondition).
+///         variant; see `diff::detail::requireAxisExtent`); if `D`'s
+///         grid does not bit-match `psi`'s (the flat-index loop would
+///         otherwise silently misalign cells; see
+///         `solve::detail::requireSameGrid`); or if any cell of `D` is
+///         not strictly positive (the harmonic-mean face-D averaging
+///         requires `D > 0` everywhere; the message names the first
+///         offending flat index).
+/// \since 0.14.0 (function); 0.14.1 (axis-extent precondition);
+///        0.14.5 (D-grid + D > 0 preconditions).
 inline core::Field<double> cellLaplacian(const core::Field<double>& psi,
                                          const core::Field<double>& D) {
   const auto& grid = psi.getGrid();
@@ -85,6 +95,18 @@ inline core::Field<double> cellLaplacian(const core::Field<double>& psi,
   diff::detail::requireAxisExtent("x", grid.getNx(), radius);
   diff::detail::requireAxisExtent("y", grid.getNy(), radius);
   diff::detail::requireAxisExtent("z", grid.getNz(), radius);
+  solve::detail::requireSameGrid(psi, D, "fvm::cellLaplacian: D");
+  const std::size_t n_cells = D.getSize();
+  const double* pD = D.data();
+  for (std::size_t idx = 0; idx < n_cells; ++idx) {
+    if (!(pD[idx] > 0.0)) {
+      throw std::invalid_argument(
+          "fvm::cellLaplacian: D must be strictly positive at every "
+          "cell (the harmonic-mean face-D averaging is undefined "
+          "otherwise); first violation at flat index " +
+          std::to_string(idx) + " with D=" + std::to_string(pD[idx]));
+    }
+  }
   const auto& h = grid.getCellSize();
   const double inv_hx2 = 1.0 / (h(0) * h(0));
   const double inv_hy2 = 1.0 / (h(1) * h(1));
