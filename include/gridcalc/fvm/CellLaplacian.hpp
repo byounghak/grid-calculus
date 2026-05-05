@@ -30,6 +30,7 @@
 
 #include <gridcalc/core/Field.hpp>
 #include <gridcalc/core/Grid.hpp>
+#include <gridcalc/diff/detail/PreconditionAxisExtent.hpp>
 
 namespace gridcalc::fvm {
 
@@ -71,10 +72,19 @@ inline double harmonicMean(double a, double b) noexcept {
 ///             undefined otherwise. Behavior is undefined if either
 ///             contract is violated.
 /// \returns A new `Field<double>` holding $\nabla\cdot(D\,\nabla\psi)$.
-/// \since 0.14.0
+/// \throws std::invalid_argument if any axis of `psi`'s grid has extent
+///         `N < 3` (the Phase 14 face-flux stencil has radius `1`; the
+///         check is uniform with the `diff::*` operator-entry contract
+///         and forward-compatible with any future higher-radius FVM
+///         variant). See `diff::detail::requireAxisExtent`.
+/// \since 0.14.0 (function); 0.14.1 (precondition).
 inline core::Field<double> cellLaplacian(const core::Field<double>& psi,
                                          const core::Field<double>& D) {
   const auto& grid = psi.getGrid();
+  constexpr int radius = 1;
+  diff::detail::requireAxisExtent("x", grid.getNx(), radius);
+  diff::detail::requireAxisExtent("y", grid.getNy(), radius);
+  diff::detail::requireAxisExtent("z", grid.getNz(), radius);
   const auto& h = grid.getCellSize();
   const double inv_hx2 = 1.0 / (h(0) * h(0));
   const double inv_hy2 = 1.0 / (h(1) * h(1));
