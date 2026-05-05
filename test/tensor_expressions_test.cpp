@@ -319,6 +319,21 @@ TEST(TensorExpressionsTest, IntegrateExpr_FusedReduction) {
     EXPECT_DOUBLE_EQ(via_expr, via_field);
 }
 
+TEST(TensorExpressionsTest, ScalarExprTimesScalarExprMatchesEager) {
+    const Grid g = makeBox(8);
+    const Field<Mat3d> A = sampleMat(g, kManufacturedMatA);
+    auto trA = expr::trace(expr::field(A));
+    const Field<double> result = expr::materialize(trA * trA);
+    for (int k = 0; k < g.getNz(); ++k) {
+        for (int j = 0; j < g.getNy(); ++j) {
+            for (int i = 0; i < g.getNx(); ++i) {
+                const double expected = A(i, j, k).trace() * A(i, j, k).trace();
+                EXPECT_DOUBLE_EQ(result(i, j, k), expected);
+            }
+        }
+    }
+}
+
 TEST(TensorExpressionsTest, IntegrateExpr_KahanReduction) {
     const Grid g = makeBox(8);
     const Field<Mat3d> A = sampleMat(g, kManufacturedMatA);
