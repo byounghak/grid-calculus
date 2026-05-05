@@ -19,6 +19,84 @@ project adheres to [Semantic Versioning](https://semver.org/).
 > (= today's Phase 15). Future blocks reference the post-renumber
 > numbering directly.
 
+## 0.14.3 — Fix: off-by-one in spectral wavenumbers on odd-N grids
+
+### Fixed
+
+- **Off-by-one in `gridcalc::spectral::kyFull` / `kzFull` on odd-`N`
+  grids.** The condition `(n < Ny / 2)` (and likewise for `Nz`) used
+  C++ integer division (truncating toward zero), so for odd `N` the
+  signed-frequency boundary landed one slot too low. For `Ny = 5`,
+  the index `n = 2` (which `numpy.fft.fftfreq` reports as `+2`, the
+  highest positive harmonic) was misclassified into the negative
+  branch and mapped to `2 - 5 = -3` — a phantom mode at a frequency
+  that does not exist in the discrete spectrum. Every spectral
+  derivative on an odd-`Ny` or odd-`Nz` grid carried the wrong
+  wavenumber at index `(N - 1) / 2`; for `spectral::laplacian` and
+  `spectral::biharmonic`, that index carries the largest `|k|^2` /
+  `|k|^4` magnitude, so the contaminated coefficient injected a
+  substantial wrong-frequency contribution.
+
+  Fixed by changing the boundary condition to `(2 * n < Ny)` (and
+  `2 * n < Nz`), which handles even and odd `N` uniformly. For even
+  `N` the new and old conditions agree at every index — existing
+  even-`N` callers see byte-identical output. The Phase 9 FD–FFT
+  cross-check fixture's grid sweep was `{16, 32, 64, 128}` (all
+  even), so the odd-`N` code path was uncovered and the bug went
+  undetected.
+
+  `gridcalc::spectral::kxRfft` is genuinely safe for both parities
+  (the rfft half-spectrum carries only non-negative harmonics, so
+  the sign-flip path is absent); it is verified unchanged via a new
+  parametrized regression test.
+
+### Tests
+
+- New `test/spectral_wavenumbers_test.cpp` (31 tests):
+  - **Direct array equality** for `kyFull` and `kzFull` against a
+    hand-computed `numpy.fftfreq` reference at
+    `N ∈ {4, 5, 6, 7, 15, 16, 31, 32}` (one test per `(parity, N)`
+    via GoogleTest parametrization).
+  - **`kxRfft` regression** confirming the rfft path is parity-
+    independent at `N ∈ {4, 5, 6, 7, 16, 17, 32}`.
+  - **Manufactured-solution highest-positive-harmonic acceptance**
+    on odd-`N` grids: `psi(y) = sin(k_max · y)` with
+    `k_max = 2π · ((Ny - 1)/2) / L` recovers `−k_max² · psi` from
+    `spectral::laplacian` to round-off (`< 1e-12` relative). Same
+    construction on the z-axis. `Ny ∈ {5, 7, 15, 31}` and
+    `Nz ∈ {5, 7, 15, 31}`. Without the fix this fails by
+    `O(|k_max|²)` magnitude.
+- Phase 9 FD–FFT cross-check sweep `kSweepNs` widened from
+  `{16, 32, 64, 128}` to `{16, 17, 32, 64, 128}`. Adding `N = 17`
+  forces every existing FD↔FFT slope-band assertion to pass on at
+  least one odd-`N` grid; `h = 2π/17 ≈ 0.37` keeps the truncation-
+  analysis regime intact (unlike 0.14.1's rejected `N = 5` at
+  `h ≈ 1.257`). The slope band stays `[Order − 0.5, Order + 0.5]`.
+- Test totals: `clang-debug` is now 347 (316 prior + 31 new);
+  `clang-debug-nofft` is unchanged at 240 (the new test file is
+  `GRIDCALC_USE_FFT`-gated, so the no-FFT build does not see it).
+
+### Documentation
+
+- `include/gridcalc/spectral/Wavenumbers.hpp` file-level Doxygen
+  block, plus per-function blocks on `kyFull` and `kzFull`, are
+  updated to state the boundary as `2 * n < N` and to call out
+  explicitly that even `N` has a Nyquist mode at `n = N/2` (lands
+  in the negative branch by convention) while odd `N` has no
+  Nyquist mode and the highest positive harmonic is at `(N − 1)/2`.
+- `\since` tags on `kyFull` and `kzFull` note the precondition fix:
+  `\since 0.9.0 (function); 0.14.3 (odd-N off-by-one fix)`.
+
+### Deferred follow-up
+
+- **`spectral::partial`'s "Nyquist mode is zeroed for odd-rank
+  derivative axes" path** (recorded under `STATUS.md` "Decisions
+  worth knowing" line 140) — if that path zeros by index
+  unconditionally rather than gating on `N % 2 == 0`, it would
+  silently zero a real positive-frequency mode at odd `N` (the
+  index `N/2` is the highest positive harmonic, not a Nyquist).
+  Audit deferred to a follow-up patch (likely `0.14.4`).
+
 ## 0.14.2 — Fix: silent Grid-mismatch on RHS return in time integrators
 
 ### Fixed

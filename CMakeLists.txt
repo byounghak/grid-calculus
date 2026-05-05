@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(gridcalc
-    VERSION 0.14.2
+    VERSION 0.14.3
     DESCRIPTION "Differential operators and functional evaluation on periodic crystalline grids"
     LANGUAGES CXX
 )
