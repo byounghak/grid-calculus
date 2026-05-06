@@ -34,6 +34,7 @@ add_executable(gridcalc_tests
     elastic_energy_test.cpp
     elastic_energy_demo_test.cpp
     tensor_grid_mismatch_test.cpp
+    tensor_leaf_lifetime_test.cpp
 )
 
 # Tests for the example helpers (`examples/common/...`) include them

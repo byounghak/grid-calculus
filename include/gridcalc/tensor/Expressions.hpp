@@ -72,9 +72,20 @@ class Leaf {
   using value_type = T;
 
   /// \brief Wraps a reference to the given field.
+  ///
+  /// Lifetime contract: the wrapped field must outlive any expression
+  /// containing this leaf. The rvalue-qualified overload below is
+  /// `= delete`d so attempts to bind a temporary
+  /// (`expr::field(diff::gradient(u))` and similar) fail at compile
+  /// time rather than dangling at the next `evalAt` walk.
   /// \param f  The field to view. Must outlive `*this`.
   /// \since 0.15.0
   explicit Leaf(const core::Field<T>& f) noexcept : _field(&f) {}
+
+  /// \brief Rejects rvalue `Field<T>` operands (added 0.15.1 to close a
+  ///        dangling-pointer hazard surfaced by the Phase 15 audit).
+  /// \since 0.15.1
+  explicit Leaf(core::Field<T>&&) = delete;
 
   /// \brief Returns the grid the underlying field lives on.
   /// \since 0.15.0
@@ -92,13 +103,26 @@ template <class T>
 struct is_expr<Leaf<T>> : std::true_type {};
 
 /// \brief Wraps a `core::Field<T>` as a `Leaf<T>` expression node.
-/// \param f  Field to wrap (lifetime contract: must outlive any expression containing the leaf).
+///
+/// Lifetime contract: `f` must outlive any expression containing the
+/// returned leaf. Wrapping a temporary --- e.g.\
+/// `expr::field(diff::gradient(u))` --- would leave the leaf with a
+/// dangling pointer once the full-expression statement ends; the
+/// rvalue overload below is `= delete`d so that mistake fails to
+/// compile rather than producing silently wrong results.
+/// \param f  Field to wrap.
 /// \returns A `Leaf<T>` referencing `f`.
 /// \since 0.15.0
 template <class T>
 inline Leaf<T> field(const core::Field<T>& f) noexcept {
   return Leaf<T>{f};
 }
+
+/// \brief Rejects rvalue `Field<T>` operands (added 0.15.1 to close a
+///        dangling-pointer hazard surfaced by the Phase 15 audit).
+/// \since 0.15.1
+template <class T>
+Leaf<T> field(core::Field<T>&&) = delete;
 
 /// \brief Lazy broadcast of `core::Mat3d::Identity()` over every grid cell.
 ///
@@ -114,9 +138,19 @@ class IdentityField {
   using value_type = core::Mat3d;
 
   /// \brief Constructs a broadcast identity over the given grid.
+  ///
+  /// Lifetime contract: the wrapped grid must outlive any expression
+  /// containing this node. The rvalue-qualified overload below is
+  /// `= delete`d so that wrapping a temporary `Grid` fails at compile
+  /// time.
   /// \param g  Grid the resulting expression is defined on. Must outlive `*this`.
   /// \since 0.15.0
   explicit IdentityField(const core::Grid& g) noexcept : _grid(&g) {}
+
+  /// \brief Rejects rvalue `Grid` operands (added 0.15.1 to close the
+  ///        dangling-pointer hazard surfaced by the Phase 15 audit).
+  /// \since 0.15.1
+  explicit IdentityField(core::Grid&&) = delete;
 
   /// \brief Returns the grid the broadcast lives on.
   /// \since 0.15.0
@@ -136,12 +170,21 @@ template <>
 struct is_expr<IdentityField> : std::true_type {};
 
 /// \brief Returns a broadcast `Mat3d::Identity()` expression over the given grid.
-/// \param g  Grid the resulting expression is defined on (referenced; must outlive returned node).
+///
+/// Lifetime contract: `g` must outlive the returned node. The rvalue
+/// overload below is `= delete`d so wrapping a temporary `Grid` fails
+/// at compile time.
+/// \param g  Grid the resulting expression is defined on.
 /// \returns An `IdentityField` expression.
 /// \since 0.15.0
 inline IdentityField identityField(const core::Grid& g) noexcept {
   return IdentityField{g};
 }
+
+/// \brief Rejects rvalue `Grid` operands (added 0.15.1 to close the
+///        dangling-pointer hazard surfaced by the Phase 15 audit).
+/// \since 0.15.1
+IdentityField identityField(core::Grid&&) = delete;
 
 // ---------------------------------------------------------------------------
 //  Combinator nodes
