@@ -19,6 +19,67 @@ project adheres to [Semantic Versioning](https://semver.org/).
 > (= today's Phase 15). Future blocks reference the post-renumber
 > numbering directly.
 
+## 0.15.1 — Phase 15 audit-driven fixes (lifetime + perf-claim retraction)
+
+External code review on the merged Phase 15 surface (PR #24, head `d129fbf`)
+surfaced two findings; both are addressed here.
+
+### Fixed
+
+- **Lazy `Leaf<T>` and `IdentityField` no longer accept rvalue
+  `Field<T>` / `Grid` operands.** Before 0.15.1, the User-Guide-encouraged
+  composition `expr::sym(expr::field(diff::gradient(u)))` wrapped the
+  temporary `Field<core::Mat3d>` returned by `gradient`, destroyed it
+  at the end of the full-expression statement, and left the leaf with
+  a dangling raw pointer; subsequent `materialize` / `func::integrate`
+  walks dereferenced freed memory. Both the `Leaf<T>` / `IdentityField`
+  constructors and the `expr::field<T>` / `expr::identityField`
+  factories now have `= delete`d rvalue overloads. Defense in depth:
+  the factory deletion catches the common call site; the constructor
+  deletion catches direct constructor uses. Compile-fail at the call
+  site rather than silent UB at evaluate time. New
+  `test/tensor_leaf_lifetime_test.cpp` locks the behavior with 16
+  `static_assert`s plus one runtime sanity test.
+
+### Changed
+
+- **`func::integrate(expr, tag)` reverted to its 0.15.0 form (forward
+  to `func::integrate(materialize(expr), tag)`); the streaming
+  `detail::pairwiseSumExpr` and `detail::neumaierSumExpr` helpers are
+  removed.** The 0.15.0 Doxygen and CHANGELOG language called this
+  overload "fused" and described it as streaming `evalAt` straight
+  into the reducer with "no scalar temporary." That language was
+  aspirational at best and misleading once benchmarks landed: a local
+  microbenchmark (Apple ARM, clang -O3, `-DNDEBUG`, 10-iteration
+  averages) ran the streaming path 2-3× **slower** than
+  materialize-then-reduce for both `trace(field)` and the
+  elastic-energy integrand at `N ∈ {64, 128}`. Best result for the
+  streaming path was 1.7× slower; worst was 3.0×. The materialize
+  path benefits from SIMD-vectorized pairwise reduction over a
+  contiguous `double` array, which the recursion-interleaved
+  streaming variant cannot match under clang -O3.
+
+  The overload still meaningfully avoids the rank-2
+  `Field<core::Mat3d>` intermediates --- the ET nodes evaluate Mat3d
+  arithmetic per cell on the stack, so $\boldsymbol{\sigma}$,
+  $\boldsymbol{\varepsilon}$, etc. never enter the heap. Only the
+  rank-0 scalar integrand `Field<double>` is allocated. That is still
+  the win the ET layer was built for; the "no scalar temporary"
+  claim was the part that didn't survive measurement and is hereby
+  retracted.
+
+  A streaming variant with SIMD or OpenMP retrofits may eventually
+  beat the contiguous-array path; that re-evaluation is deferred to
+  Phase 21's performance pass. Pinned in `STATUS.md` "Open / deferred
+  items."
+
+### Test totals (0.15.1)
+
+`clang-debug` 446 (prior 0.15.0) + 1 new runtime test
+(`TensorLeafLifetimeTest.LvalueFactoriesStillWork`) = 447. Compile-time
+`static_assert`s in `test/tensor_leaf_lifetime_test.cpp` (16 of them)
+do not contribute to the runtime test count.
+
 ## 0.15.0 — Phase 15: Functional evaluation for vector / tensor data
 
 Generalizes `func::evaluate` to `Field<core::Vec3d>` input with two
