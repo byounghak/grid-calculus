@@ -29,18 +29,19 @@ Four commit-sized groups. Build and tests stay green between every commit.
 
 **Commit message:** `fix(tensor): reject rvalue Field/Grid in expr::field / identityField factories`
 
-## Group 3 — Nested-loop fused reducers
+## Group 3 — Revert streaming integrate; retract perf claim
+
+The original plan was to rewrite the streaming reducers to drop per-cell `% / /` (the auditor's recommendation). That rewrite was implemented locally and benchmarked alongside materialize-then-reduce on `trace(field)` and the elastic-energy integrand at `N ∈ {64, 128}`. The benchmark surfaced that the streaming path is 2-3× **slower** than materialize-then-reduce on Apple ARM with clang -O3 even after the per-cell-division fix, because the materialize path's contiguous `Field<double>` reduces with much better SIMD utilization (see `requirements.md` for the table). Per the auditor's "add a benchmark before shipping the performance claim" recommendation: the benchmark says retract the claim.
 
 - `include/gridcalc/func/Integrate.hpp`:
-  - `detail::pairwiseSumExpr` base case: compute `(i_start, j_start, k_start)` from `start` *once* via the existing `% / /` arithmetic, then walk the next `n` cells incrementing `i` with rollover into `j` and `k`. Recursion structure (split at `n / 2`, base-case threshold `kBaseCase = 64`) unchanged.
-  - `detail::neumaierSumExpr` becomes a triple-nested loop `for (int k = 0; k < Nz; ++k) for (int j = 0; j < Ny; ++j) for (int i = 0; i < Nx; ++i)`, evaluating `expr.evalAt(i, j, k)` per cell. Loop signature drops the `(n, Nx, Ny)` arguments in favor of `(grid)` (or just `(Nx, Ny, Nz)`), since we now iterate naturally rather than via flat-index arithmetic.
-  - The `func::integrate(expr, tag)` overload calls the rewritten reducers; the tag-dispatch ladder is unchanged.
-  - Doxygen on both reducers updated to call out the no-per-cell-division loop pattern and the bit-identical-output contract vs.\ the linear-walk version.
+  - Drop the `detail::pairwiseSumExpr` and `detail::neumaierSumExpr` helpers introduced in 0.15.0.
+  - Revert `func::integrate(expr, tag)` to its 0.15.0 form: `return integrate(tensor::expr::materialize(expr), tag);`. The overload still avoids the rank-2 `Field<core::Mat3d>` intermediates (those never enter the picture; the ET nodes evaluate Mat3d arithmetic per cell on the stack); only the rank-0 scalar integrand `Field<double>` is allocated. That is still a meaningful win versus the eager pre-Phase-15 path, just not the "fully fused, no scalar temporary" win the original Doxygen and CHANGELOG language oversold.
+  - Update the file-level Doxygen and the per-overload Doxygen on `func::integrate(expr, tag)` to honestly describe what the overload does and links the streaming question to Phase 21 (the dedicated performance pass).
 - Existing tests act as the regression gate:
-  - `IntegrateExpr_FusedReduction` and `IntegrateExpr_KahanReduction` in `test/tensor_expressions_test.cpp` use `EXPECT_DOUBLE_EQ(via_expr, via_field)`. The rewrite must keep both passing — same order of additions per the i-fastest layout.
-  - `ElasticEnergyTest.MatchesViaExpressionLayer` exercises the fused integrate on the elastic-energy integrand and compares to the `func::evaluate` route. Must still pass.
+  - `IntegrateExpr_FusedReduction` and `IntegrateExpr_KahanReduction` in `test/tensor_expressions_test.cpp` use `EXPECT_DOUBLE_EQ(via_expr, via_field)`. After the revert the LHS *is* literally `via_field` --- the comparison becomes trivially true. Both keep passing.
+  - `ElasticEnergyTest.MatchesViaExpressionLayer` exercises the ET-route integrate against the `func::evaluate` route. Must still pass.
 
-**Commit message:** `perf(func): nested-loop fused integrate without per-cell integer division`
+**Commit message:** `perf(func): revert streaming integrate(expr); retract fused-loop perf claim`
 
 ## Group 4 — Bookkeeping
 

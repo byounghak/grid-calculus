@@ -9,11 +9,17 @@
 /// tag dispatch: pairwise recursive summation (default) and Kahan/Neumaier
 /// compensated summation.
 ///
-/// Phase 15 adds a fused overload accepting any contraction-ET node from
+/// Phase 15 adds an overload accepting any contraction-ET node from
 /// `gridcalc/tensor/Expressions.hpp` whose `value_type` is `double`,
-/// avoiding `Field<core::Mat3d>` intermediates when reducing tensor
-/// expressions like the linear elastic energy
+/// avoiding rank-2 `Field<core::Mat3d>` intermediates when reducing
+/// tensor expressions like the linear elastic energy
 /// $\int \tfrac12 \boldsymbol{\sigma}:\boldsymbol{\varepsilon}\,dV$.
+/// The overload allocates one `Field<double>` for the scalar
+/// integrand and forwards to the `Field<double>` reducer; a streaming
+/// variant that skips the scalar temporary was prototyped under the
+/// 0.15.1 audit but benchmarked 2-3x slower than the
+/// materialize-then-reduce path on common hardware (deferred to
+/// Phase 21's performance pass).
 /// \since 0.3.0 (scalar `Field<double>` overloads); 0.15.0 (ET overload).
 
 #pragma once
@@ -128,101 +134,34 @@ inline double integrate(const core::Field<double>& field, Kahan tag) noexcept {
          detail::neumaierSum(field.data(), field.getSize());
 }
 
-namespace detail {
-
-/// \brief Pairwise recursive sum of `n` expression-evaluated cells starting
-///        at flat index `start`, walking the i-fastest layout.
-///
-/// Mirrors the recursion structure of `pairwiseSum` so the order of
-/// additions is identical to materializing the expression into a
-/// contiguous `Field<double>` and reducing that --- the streaming path
-/// is therefore bit-identical to the materialize-then-pairwise path
-/// the test fixture compares against, while skipping the intermediate
-/// allocation. Recurses until the block size is below `kBaseCase`, at
-/// which point the per-cell sum runs as a flat loop over linear
-/// indices.
-/// \tparam E      A contraction-ET node type with `value_type == double`.
-/// \param  expr   The expression to evaluate per cell.
-/// \param  start  Starting flat index (in i-fastest layout).
-/// \param  n      Number of consecutive flat indices to reduce.
-/// \param  Nx, Ny Grid extents along x and y; used to recover
-///                `(i, j, k)` from the flat index.
-/// \returns The pairwise-reduced sum.
-/// \since 0.15.0
-template <class E>
-inline double pairwiseSumExpr(const E& expr, std::size_t start, std::size_t n,
-                              int Nx, int Ny) noexcept {
-  static constexpr std::size_t kBaseCase = 64;
-  if (n <= kBaseCase) {
-    double s = 0.0;
-    const std::size_t Nxs = static_cast<std::size_t>(Nx);
-    const std::size_t Nys = static_cast<std::size_t>(Ny);
-    for (std::size_t off = 0; off < n; ++off) {
-      const std::size_t lin = start + off;
-      const int i = static_cast<int>(lin % Nxs);
-      const std::size_t r = lin / Nxs;
-      const int j = static_cast<int>(r % Nys);
-      const int k = static_cast<int>(r / Nys);
-      s += expr.evalAt(i, j, k);
-    }
-    return s;
-  }
-  const std::size_t mid = n / 2;
-  return pairwiseSumExpr(expr, start, mid, Nx, Ny) +
-         pairwiseSumExpr(expr, start + mid, n - mid, Nx, Ny);
-}
-
-/// \brief Single-pass Neumaier compensated sum over expression-evaluated cells.
-///
-/// Walks linear indices `[0, n)` in i-fastest order, evaluating
-/// `expr.evalAt(i, j, k)` at each cell and accumulating with the
-/// Neumaier compensation strategy. Bit-identical to
-/// `neumaierSum(materialize(expr).data(), n)` since the linear-index
-/// walk reproduces the materialized field's storage order.
-/// \tparam E      A contraction-ET node type with `value_type == double`.
-/// \param  expr   The expression to evaluate per cell.
-/// \param  n      Total cell count.
-/// \param  Nx, Ny Grid extents along x and y; used to recover
-///                `(i, j, k)` from the flat index.
-/// \returns The compensated sum.
-/// \since 0.15.0
-template <class E>
-inline double neumaierSumExpr(const E& expr, std::size_t n, int Nx, int Ny) noexcept {
-  double sum = 0.0;
-  double c = 0.0;
-  const std::size_t Nxs = static_cast<std::size_t>(Nx);
-  const std::size_t Nys = static_cast<std::size_t>(Ny);
-  for (std::size_t lin = 0; lin < n; ++lin) {
-    const int i = static_cast<int>(lin % Nxs);
-    const std::size_t r = lin / Nxs;
-    const int j = static_cast<int>(r % Nys);
-    const int k = static_cast<int>(r / Nys);
-    const double x = expr.evalAt(i, j, k);
-    const double t = sum + x;
-    if (std::abs(sum) >= std::abs(x)) {
-      c += (sum - t) + x;
-    } else {
-      c += (x - t) + sum;
-    }
-    sum = t;
-  }
-  return sum + c;
-}
-
-}  // namespace detail
-
 /// \brief Returns $\int \mathrm{expr}\, dV$ for a `double`-valued contraction-ET expression.
 ///
-/// Streams the per-cell evaluator straight into the reducer --- no
-/// `core::Field<double>` integrand is allocated. Avoids the rank-2
-/// intermediates (`Field<core::Mat3d>` for $\boldsymbol{\sigma}$,
-/// $\boldsymbol{\varepsilon}$, etc.) and the rank-0 scalar integrand
-/// alike. The recursion structure for `Pairwise` matches
-/// `detail::pairwiseSum` exactly (same `kBaseCase`, same split point
-/// `n / 2`) and the `Kahan` walk is the same single-pass Neumaier loop,
-/// so the result is bit-identical to
-/// `func::integrate(tensor::expr::materialize(expr), tag)`. Supported
-/// tags are `Pairwise` (default) and `Kahan`.
+/// Materializes the per-cell scalar integrand once into a temporary
+/// `core::Field<double>` and forwards to the matching scalar
+/// `Field<double>` overload. The point of the overload is to **avoid**
+/// materializing the rank-2 intermediates (`Field<core::Mat3d>` for
+/// $\boldsymbol{\sigma}$, $\boldsymbol{\varepsilon}$, etc.) along the
+/// way: the expression's `evalAt(i, j, k)` evaluator pulls the
+/// pointwise scalar straight from the Mat3d arithmetic at each cell.
+/// One scalar `Field<double>` is allocated; for the linear-elastic
+/// energy that is a 9x memory savings versus the eager path that
+/// would build $\boldsymbol{\varepsilon}$ and $\boldsymbol{\sigma}$
+/// as `Field<core::Mat3d>` first.
+///
+/// **Implementation note (decided 2026-05-05).** A streaming variant
+/// that walks `evalAt` directly into pairwise / Neumaier reducers
+/// without the scalar temporary was prototyped under the Phase 15
+/// audit and benchmarked at `N = 64` and `N = 128` for both
+/// `trace(field)` and the elastic-energy integrand: it ran 2-3x
+/// **slower** than the materialize-then-reduce path on Apple ARM /
+/// clang -O3 (the materialized contiguous `Field<double>` reduces
+/// with much better SIMD utilization than the recursion-interleaved
+/// stream). The streaming approach is deferred to Phase 21's
+/// performance pass, where SIMD / OpenMP retrofits can re-evaluate
+/// the trade-off; until then this overload uses the simpler
+/// forward-to-materialize implementation. Bit-identical to
+/// `func::integrate(tensor::expr::materialize(expr), tag)` by
+/// construction. Supported tags are `Pairwise` (default) and `Kahan`.
 /// \tparam E    A contraction-ET node type (`tensor::expr::is_expr_v<E>` must be `true`)
 ///              with `value_type == double`.
 /// \tparam Tag  Reduction-strategy tag --- `Pairwise` or `Kahan`.
@@ -234,19 +173,10 @@ template <class E, class Tag = Pairwise,
           std::enable_if_t<tensor::expr::is_expr_v<E> &&
                                std::is_same_v<typename std::decay_t<E>::value_type, double>,
                            int> = 0>
-inline double integrate(const E& expr, Tag tag = {}) noexcept {
+inline double integrate(const E& expr, Tag tag = {}) {
   static_assert(std::is_same_v<Tag, Pairwise> || std::is_same_v<Tag, Kahan>,
                 "func::integrate(expr): Tag must be func::Pairwise or func::Kahan");
-  (void)tag;
-  const auto& grid = expr.grid();
-  const int Nx = grid.getNx();
-  const int Ny = grid.getNy();
-  const std::size_t n = grid.getSize();
-  if constexpr (std::is_same_v<Tag, Pairwise>) {
-    return grid.getCellVolume() * detail::pairwiseSumExpr(expr, 0, n, Nx, Ny);
-  } else {
-    return grid.getCellVolume() * detail::neumaierSumExpr(expr, n, Nx, Ny);
-  }
+  return integrate(tensor::expr::materialize(expr), tag);
 }
 
 }  // namespace gridcalc::func

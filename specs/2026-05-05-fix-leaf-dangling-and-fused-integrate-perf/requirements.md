@@ -22,13 +22,22 @@ Two findings surfaced by an external code audit on the merged Phase 15 surface (
 
 - **Doxygen restating the lifetime contract.** The surviving lvalue-only factories (`expr::field` and `expr::identityField`) gain an explicit "the wrapped field/grid must outlive the expression" line in their Doxygen blocks, plus a sibling-comment noting that rvalue overloads are deleted.
 
-- **Nested-loop fused reducers, bit-identical to the linear-walk semantics.**
-  - `detail::pairwiseSumExpr` retains its linear-range recursion (so the pairwise tree shape — `kBaseCase = 64`, split at `n / 2` — is unchanged). At the base case, compute the starting `(i_start, j_start, k_start)` *once* from `start` via the existing `% / /` arithmetic, then walk the next `n` cells by incrementing `i` with rollover into `j` and `k`. Cost: one pair of `% / /` per ≤64 cells (was: per cell).
-  - `detail::neumaierSumExpr` becomes a triple-nested `for (k) for (j) for (i)` loop in i-fastest order. Bit-identical to the current linear walk because `Field<T>::data()` storage and the `linear → (i, j, k)` mapping both use i-fastest order.
+- **Streaming `func::integrate(expr, tag)` is reverted to its 0.15.0 form** (forward to `func::integrate(materialize(expr), tag)`). The `detail::pairwiseSumExpr` and `detail::neumaierSumExpr` helpers introduced in 0.15.0 are removed. Reasoning is benchmark-driven: a microbenchmark prototyped per the auditor's recommendation found the streaming path 2-3x **slower** than materialize-then-reduce on the elastic-energy integrand at `N = 64` and `N = 128`, on Apple ARM with clang -O3. Numbers (10-iteration averages, `-O3 -DNDEBUG`):
 
-  Both rewrites preserve the existing `IntegrateExpr_FusedReduction` and `IntegrateExpr_KahanReduction` `EXPECT_DOUBLE_EQ` regression tests (the order of additions is bit-for-bit identical to the materialize-then-pairwise/Neumaier path).
+  | integrand      | grid | streaming (post-rewrite) | materialize+pairwise | streaming/materialize ratio |
+  | -------------- | ---- | ------------------------ | -------------------- | --------------------------- |
+  | `trace(field)` | 64³  | 1.60 ms                  | 0.74 ms              | 2.2× slower                 |
+  | `trace(field)` | 128³ | 6.32 ms                  | 3.67 ms              | 1.7× slower                 |
+  | elastic energy | 64³  | 3.69 ms                  | 1.24 ms              | 3.0× slower                 |
+  | elastic energy | 128³ | 25.59 ms                 | 10.14 ms             | 2.5× slower                 |
 
-- **No permanent benchmark suite added in this PR.** Phase 21's performance pass owns the benchmark infrastructure (`bench/baselines/` per `tech-stack.md` validation rule). The PR description records local microbenchmark numbers comparing fused vs.\ materialize-then-integrate on `trace(field)` and the elastic-energy integrand at `N ∈ {64, 128}`, but no `bench/` target lands here. Adding one now would either be tossed or re-implemented when Phase 21 stands up the proper suite.
+  The materialize path benefits from SIMD-vectorized pairwise reduction over a contiguous `double` array; the streaming path's evalAt-interleaved-with-recursion structure does not vectorize as well under clang -O3. The right fix is *not* to micro-optimize the streaming path further but to reconsider whether streaming is the right approach at all on common hardware. Per the auditor's "add a benchmark before shipping the performance claim" recommendation: the benchmark says retract the claim.
+
+- **Streaming-with-vectorization deferred to Phase 21.** A future re-evaluation may find that an OpenMP-parallelized or hand-SIMD streaming path can beat the contiguous-array materialize path, but exploring that belongs in Phase 21 (the dedicated performance pass), not in a 0.15.1 audit follow-up. The "Open / deferred items" list in `STATUS.md` gains a new entry pinning the question.
+
+- **0.15.0 fused-loop perf claim is retracted in the Doxygen + CHANGELOG.** The Phase 15 chapter and 0.15.0 CHANGELOG block called the ET-integrate overload "fused" and described it as streaming `evalAt` straight into the reducer with "no scalar temporary." That language was at best aspirational and at worst misleading once benchmarks landed. The 0.15.1 CHANGELOG block calls out the retraction; the Doxygen block on `func::integrate(expr, tag)` is rewritten to honestly describe what it does (avoids rank-2 intermediates; allocates one scalar `Field<double>`) and to link the streaming question to Phase 21.
+
+- **No permanent benchmark suite added in this PR.** Phase 21's performance pass owns the benchmark infrastructure (`bench/baselines/` per `tech-stack.md` validation rule). The local microbenchmark above is a throwaway file under `/tmp/bench_integrate_expr.cpp`; only the resulting numbers and decision land in this PR (in this `requirements.md`, the CHANGELOG, and the Doxygen note).
 
 ## Non-goals
 
