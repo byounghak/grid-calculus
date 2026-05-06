@@ -21,22 +21,24 @@
   - `expr::identityField` factory: invocable on `const Grid&` (true), not invocable on `Grid&&` (false).
 - [ ] One run-time `TEST` body uses the lvalue factories so the file shows up in `gtest_discover_tests`.
 
-### Bit-identical fused integrate (Group 3)
+### Reverted streaming integrate (Group 3)
 
-- [ ] `IntegrateExpr_FusedReduction` (in `test/tensor_expressions_test.cpp`, pre-existing) — `func::integrate(0.5 * doubleContract(leafA, leafB))` matches `func::integrate(materialize(...))` to `EXPECT_DOUBLE_EQ` (bit-identical pairwise tree).
-- [ ] `IntegrateExpr_KahanReduction` (pre-existing) — same with `Kahan` tag, `EXPECT_DOUBLE_EQ` still holds.
-- [ ] `ElasticEnergyTest.MatchesViaExpressionLayer` (pre-existing) — `func::evaluate(u, energy_density)` route matches the fused-ET `func::integrate(0.5 lambda trace²(eps) + mu eps:eps)` route to round-off.
+- [ ] `IntegrateExpr_FusedReduction` (in `test/tensor_expressions_test.cpp`, pre-existing) — `func::integrate(0.5 * doubleContract(leafA, leafB))` matches `func::integrate(materialize(...))` to `EXPECT_DOUBLE_EQ`. After the revert the LHS *is* `func::integrate(materialize(...))`; the equality is trivially true and the test continues to pass.
+- [ ] `IntegrateExpr_KahanReduction` (pre-existing) — same with `Kahan` tag.
+- [ ] `ElasticEnergyTest.MatchesViaExpressionLayer` (pre-existing) — `func::evaluate(u, energy_density)` route matches the ET-`func::integrate(0.5 lambda trace²(eps) + mu eps:eps)` route to round-off. The ET route now goes through `materialize` internally; the round-trip still holds.
 - [ ] All other Phase 15 ET tests remain green (17 in `tensor_expressions_test.cpp` + 8 in `elastic_energy_test.cpp` + 1 in `elastic_energy_demo_test.cpp` + 6 in `func_evaluate_vector_test.cpp` + 17 in `tensor_grid_mismatch_test.cpp`).
 
 ### Regression
 
-- [ ] All previously-passing tests remain green (446 prior on `clang-debug`, 303 prior on `clang-debug-nofft`). This PR adds at most 1 runtime test (the lifetime fixture) and ~12 compile-time `static_assert`s.
+- [ ] All previously-passing tests remain green (446 prior on `clang-debug`, 303 prior on `clang-debug-nofft`). This PR adds 1 runtime test (the lifetime fixture) and 16 compile-time `static_assert`s; it removes 2 internal helpers (`detail::pairwiseSumExpr`, `detail::neumaierSumExpr`) that were never user-facing.
 
-## Performance (PR description, not CHANGELOG)
+## Performance (PR description, this `requirements.md`, and CHANGELOG)
 
-- [ ] Local microbenchmark numbers recorded in the PR description comparing fused vs.\ materialize-then-integrate on:
+- [ ] Local microbenchmark table recorded in `requirements.md` comparing streaming (post-rewrite) vs.\ materialize-then-integrate on:
   - Cheap integrand: `func::integrate(trace(field))` on a `Field<Mat3d>` at `N ∈ {64, 128}`.
   - Elastic-energy integrand: `func::integrate(0.5 lambda * trace(eps) * trace(eps) + mu * doubleContract(eps, eps))` at `N ∈ {64, 128}`.
+- [ ] CHANGELOG `## 0.15.1` block records the perf-claim retraction with the table headline ("streaming 2-3× slower than materialize on Apple ARM clang -O3").
+- [ ] `STATUS.md` "Open / deferred items" gains an entry pointing the streaming-with-vectorization question to Phase 21.
 - [ ] No permanent benchmark target committed — Phase 21 owns that surface.
 
 ## Documentation
