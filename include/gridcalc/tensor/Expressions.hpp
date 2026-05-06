@@ -105,7 +105,7 @@ struct is_expr<Leaf<T>> : std::true_type {};
 /// \brief Wraps a `core::Field<T>` as a `Leaf<T>` expression node.
 ///
 /// Lifetime contract: `f` must outlive any expression containing the
-/// returned leaf. Wrapping a temporary --- e.g.\
+/// returned leaf. Wrapping a temporary --- e.g.
 /// `expr::field(diff::gradient(u))` --- would leave the leaf with a
 /// dangling pointer once the full-expression statement ends; the
 /// rvalue overload below is `= delete`d so that mistake fails to
